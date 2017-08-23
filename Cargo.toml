@@ -1,0 +1,11 @@
+[package]
+name = "account_linker_bot"
+version = "0.1.0"
+authors = ["Kanedias <kanedias@xaker.ru>"]
+
+[dependencies]
+diesel = { version = "0.15.0", features = ["sqlite"] }
+diesel_codegen = { version = "0.15.0", features = ["sqlite"] }
+
+log = "0.3"
+log4rs = "0.7.0"
