@@ -13,13 +13,13 @@ pub mod entities;
 fn main() {
     // init logging
     if Path::new("conf/log4rs.yml").exists() {
-        log4rs::init_file("conf/log4rs.yml", Default::default()).unwrap();
+        log4rs::init_file("conf/log4rs.yml", Default::default()).expect("Failed to initialize logging!");
     }
 
     // init database
     if !Path::new("data").exists() {
         debug!("Creating data dir for configs in cwd");
-        create_dir("data").unwrap();
+        create_dir("data").expect("Failed to create data dir!");
     }
     let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
 }
