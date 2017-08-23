@@ -1,12 +1,23 @@
 #[macro_use] extern crate diesel;
+
 #[macro_use] extern crate log;
 extern crate log4rs;
+
+extern crate futures;
+extern crate tokio_core;
+extern crate hyper;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
+
+use futures::{Future, Stream};
+use tokio_core::reactor::Core;
+use hyper::Client;
+
 use std::path::Path;
 use std::fs::create_dir;
+use std::io::{self, Write};
 
 pub mod entities;
 
