@@ -12,4 +12,11 @@ log = "0.3"             # log facade
 log4rs = "0.7.0"        # log impl
 # http
 hyper = "0.11.2"        # request builder
+futures = "0.1"
+tokio-core = "0.1"
 select = "0.4.2"        # http parsing
+
+[features]
+default = [ "linux-org-ru" ]
+
+linux-org-ru = []
