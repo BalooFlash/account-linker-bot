@@ -15,12 +15,26 @@ use futures::{Future, Stream};
 use tokio_core::reactor::Core;
 use hyper::Client;
 
+use std::thread;
+use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::io::{self, Write};
+use std::result::Result;
 
 mod entities;
 mod modules;
+
+struct GlobalData<T> {
+    conn: SqliteConnection,
+    httpClient: Client<T>
+}
+
+impl<T> GlobalData<T> {
+    pub fn new(dbConn: SqliteConnection, httpClient: Client<T>) -> GlobalData<T> {
+        GlobalData { conn: dbConn, httpClient: httpClient }
+    }
+}
 
 fn main() {
     // init logging
@@ -35,6 +49,17 @@ fn main() {
     }
     let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
 
-    let mut core = Core::new().expect("Failed to init tokio core");
+    let mut core = Core::new().expect("Failed to init event loop!");
     let client = Client::new(&core.handle());
+
+    let appData = GlobalData::new(conn, client);
+    
+    start_event_loop(appData);
 }
+
+fn start_event_loop<T>(data: GlobalData<T>) -> Result<(), ()> {
+    loop {
+        debug!("Done polling, sleeping...");
+        thread::sleep(Duration::from_millis(100));
+    }
+}   
