@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Kanedias <kanedias@xaker.ru>"]
 
 [dependencies]
+# common
+chrono = { version = "0.4", features = ["serde", "rustc-serialize"] }
 # db
 diesel = { version = "0.15.0", features = ["sqlite"] }
 diesel_codegen = { version = "0.15.0", features = ["sqlite"] }
@@ -11,9 +13,10 @@ diesel_codegen = { version = "0.15.0", features = ["sqlite"] }
 log = "0.3"             # log facade
 log4rs = "0.7.0"        # log impl
 # http
-hyper = "0.11.2"        # request builder
-futures = "0.1"
-tokio-core = "0.1"
+#hyper = "0.11.2"        # request builder
+#futures = "0.1"
+#tokio-core = "0.1"
+reqwest = "0.7.0"
 select = "0.4.2"        # http parsing
 
 [features]
