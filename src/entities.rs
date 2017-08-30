@@ -1,7 +1,6 @@
 mod entities {
-extern crate chrono;
 
-use self::chrono::prelude::*;
+use chrono::prelude::*;
 
     struct UserInfo {
         userId: i64,

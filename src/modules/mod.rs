@@ -6,8 +6,8 @@ use self::chrono::prelude::*;
 pub mod lor_ru;
 
 struct UserComment {
-    userName: String,
-    postTitle: String,
-    commentDate: DateTime<Utc>,
-    commentText: String
+    user_name: String,
+    post_title: String,
+    comment_date: DateTime<FixedOffset>,
+    comment_text: String,
 }

@@ -1,11 +1,13 @@
 use std::result::Result;
 use std::vec::Vec;
+use std::io::Read;
 
 use reqwest::Client;
 use reqwest::Error;
-use reqwest::Url;
 use select::document::Document;
 use select::predicate::{Predicate, Attr, Class, Name};
+
+use chrono::prelude::*;
 
 use modules::UserComment;
 
@@ -13,40 +15,50 @@ const LOR_URL: &'static str = "https://www.linux.org.ru/";
 
 pub struct LorComment {
     common: UserComment,
-    postLink: String,
-    authorLink: String,
+    post_link: String,
+    author_link: String,
 }
 
-
-pub fn get_user_posts(userName: String, client: &Client) -> Result<Vec<LorComment>, Error> {
-    let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &userName;
+pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComment>, Error> {
+    let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &user_name;
     let mut body = String::new();
-    let response = client.get(&url)?.send()?;
+    let mut response = client.get(&url)?.send()?;
+    response.read_to_string(&mut body);
 
     let doc = Document::from(body.as_str());
-    let comments: Vec<LorComment> = vec![];
-    for node in doc.find(Class("messages")) {
-        let question = node.find(Class("question-hyperlink")).next().unwrap();
-        let votes = node.find(Class("vote-count-post")).next().unwrap().text();
-        let answers = node.find(Class("status").descendant(Name("strong")))
-            .next()
-            .unwrap()
-            .text();
-        let tags = node.find(Class("post-tag")).map(|tag| tag.text()).collect::<Vec<_>>();
-        let asked_on = node.find(Class("relativetime")).next().unwrap().text();
-        let asker = node.find(Class("user-details").descendant(Name("a")))
-            .next()
-            .unwrap()
-            .text();
-        println!(" Question: {}", question.text());
-        println!("  Answers: {}", answers);
-        println!("    Votes: {}", votes);
-        println!("   Tagged: {}", tags.join(", "));
-        println!(" Asked on: {}", asked_on);
-        println!("    Asker: {}", asker);
-        println!("Permalink: http://stackoverflow.com{}",
-                 question.attr("href").unwrap());
-        println!("");
+    let mut comments: Vec<LorComment> = vec![];
+    for node in doc.find(Name("article").and(Class("msg"))) {
+        let (post_link, post_title);
+        match node.find(Name("h2").descendant(Name("a"))).next() {
+            None => continue,
+            Some(post) => {
+                post_link = post.attr("href").unwrap().to_string();
+                post_title = post.text();
+            }
+        }
+
+        let (author_link, author_name);
+        match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
+            None => continue,
+            Some(author) => {
+                author_link = author.attr("href").unwrap().to_string();
+                author_name = author.text();
+            }
+        }
+
+        let comment_date = DateTime::parse_from_rfc3339(node.find(Name("time")).next().unwrap().attr("datetime").unwrap()).unwrap();
+        let comment_text = node.find(Name("div").and(Class("msg_body")).descendant(Name("p"))).next().unwrap().text();
+
+        comments.push(LorComment {
+            common: UserComment {
+                user_name: author_name,
+                post_title: post_title,
+                comment_date: comment_date,
+                comment_text: comment_text
+            },
+            post_link: post_link,
+            author_link: author_link
+        });
     }
 
     Ok(comments)

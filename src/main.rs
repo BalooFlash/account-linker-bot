@@ -8,6 +8,8 @@ extern crate log4rs;
 extern crate reqwest;
 extern crate select;
 
+extern crate chrono;
+
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
@@ -32,9 +34,9 @@ struct GlobalData {
 }
 
 impl GlobalData {
-    pub fn new(dbConn: SqliteConnection, httpClient: Client) -> GlobalData {
+    pub fn new(db_conn: SqliteConnection, httpClient: Client) -> GlobalData {
         GlobalData {
-            conn: dbConn,
+            conn: db_conn,
             httpClient: httpClient,
         }
     }
