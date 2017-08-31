@@ -41,13 +41,25 @@ pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComme
         match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
             None => continue,
             Some(author) => {
-                author_link = author.attr("href").unwrap().to_string();
+                author_link = author.attr("href").unwrap_or_default().to_string();
                 author_name = author.text();
             }
         }
 
-        let comment_date = DateTime::parse_from_rfc3339(node.find(Name("time")).next().unwrap().attr("datetime").unwrap()).unwrap();
-        let comment_text = node.find(Name("div").and(Class("msg_body")).descendant(Name("p"))).next().unwrap().text();
+        let (comment_date, comment_text);
+        match node.find(Name("time")).next() {
+            None => continue,
+            Some(time) => {
+                let instant = Local::now().with_timezone(Local::now().offset());
+                comment_date = time.attr("datetime").map_or(instant,|t| DateTime::parse_from_rfc3339(t).unwrap_or(instant))
+            }
+        }
+        match node.find(Name("div").and(Class("msg_body")).descendant(Name("p"))).next() {
+            None => continue,
+            Some(text) => {
+                comment_text = text.text();
+            }
+        }
 
         comments.push(LorComment {
             common: UserComment {
