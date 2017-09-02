@@ -19,6 +19,8 @@ pub struct LorComment {
     author_link: String,
 }
 
+
+
 pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComment>, Error> {
     let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &user_name;
     let mut body = String::new();

@@ -61,10 +61,12 @@ fn main() {
 
     let app_data = GlobalData::new(conn, client);
 
+    // retrieve list of bindings from database
+
     start_event_loop(app_data);
 }
 
-fn start_event_loop(data: GlobalData) -> Result<(), ()> {
+fn start_event_loop(data: GlobalData) {
     loop {
         #[cfg(feature = "linux-org-ru")]
         lor_ru::get_user_posts("Adonai".to_string(), &data.httpClient);
