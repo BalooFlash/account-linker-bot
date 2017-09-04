@@ -3,7 +3,6 @@ use std::vec::Vec;
 use std::io::Read;
 
 use reqwest::Client;
-use reqwest::Error;
 use select::document::Document;
 use select::predicate::{Predicate, Attr, Class, Name};
 
@@ -19,13 +18,27 @@ pub struct LorComment {
     author_link: String,
 }
 
+#[derive(Debug, Error)]
+pub enum LorError {
+    // Error retrieving LOR HTML page
+    HttpError(::reqwest::Error),
+    // Error converting response to string
+    ConvertError(::std::io::Error)
+}
 
+impl ToString for LorComment {
 
-pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComment>, Error> {
+    fn to_string(&self) -> String {
+        format!("[{}]({}) posted comment in post [{}]({}): '{}'", self.common.user_name, self.author_link, 
+        self.common.post_title, self.post_link, self.common.comment_text)
+    }
+}
+
+pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComment>, LorError> {
     let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &user_name;
     let mut body = String::new();
     let mut response = client.get(&url)?.send()?;
-    response.read_to_string(&mut body);
+    response.read_to_string(&mut body)?;
 
     let doc = Document::from(body.as_str());
     let mut comments: Vec<LorComment> = vec![];
@@ -34,7 +47,7 @@ pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComme
         match node.find(Name("h2").descendant(Name("a"))).next() {
             None => continue,
             Some(post) => {
-                post_link = post.attr("href").unwrap().to_string();
+                post_link = post.attr("href").unwrap_or_default().to_owned();
                 post_title = post.text();
             }
         }
@@ -43,7 +56,7 @@ pub fn get_user_posts(user_name: String, client: &Client) -> Result<Vec<LorComme
         match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
             None => continue,
             Some(author) => {
-                author_link = author.attr("href").unwrap_or_default().to_string();
+                author_link = author.attr("href").unwrap_or_default().to_owned();
                 author_name = author.text();
             }
         }

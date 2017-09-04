@@ -19,6 +19,10 @@ log4rs = "0.7.0"        # log impl
 reqwest = "0.7.0"
 select = "0.4.2"        # http parsing
 
+# utils
+derive-new = "0.5"
+derive-error = "0.0.3"
+
 [features]
 default = [ "linux-org-ru" ]
 
