@@ -2,6 +2,14 @@ use chrono::prelude::*;
 use modules::*;
 use reqwest::Client;
 
+#[derive(Debug, Error)]
+pub enum CoreError {
+    // Error retrieving LOR HTML page
+    HttpError(::reqwest::Error),
+    // Error converting response to string
+    ConvertError(::std::io::Error)
+}
+
 // Where do we request updates to be sent to
 // and from where do we connect to link accounts
 pub enum Connector {
@@ -14,29 +22,25 @@ pub enum Adapter {
     LinuxOrgRu,
 }
 
-// Common trait that both Connectors and Adapters possess
-trait Connectable {
+pub enum MarkdownType {
+    GitHub,
+    Matrix,
+    Telegram
+}
+
+/// Common trait that both Connectors and Adapters possess
+pub trait Connectable {
     fn connect(&self);
 }
 
-trait Pollable: Connectable {
-    fn poll<T: ToString>(&self, client: &Client, specifiers: &Vec<String>) -> Vec<T>;
-}
-
-trait Notifiable: Connectable {
-    fn send(&self, comment: UserComment);
+/// Update description
+pub trait UpdateDesc {
+    fn as_string(&self) -> String;
+    fn as_markdown(&self, md_type: &MarkdownType) -> String;
 }
 
 impl Connectable for Connector {
     fn connect(&self) {
-        match self {
-            Matrix => {}
-        }
-    }
-}
-
-impl Notifiable for Connector {
-    fn send(&self, comment: UserComment) {
         match self {
             Matrix => {}
         }
@@ -53,12 +57,15 @@ impl Connectable for Adapter {
     }
 }
 
-impl Pollable for Adapter {
-    fn poll<T: ToString>(&self, client: &Client, specifiers: &Vec<String>) -> Vec<T> {
+impl Adapter {
+    fn poll<T: UpdateDesc>(&self, client: &Client, specifiers: &Vec<String>) -> Result<Vec<Box<UpdateDesc>>, CoreError> {
         match self {
             LinuxOrgRu => {
-                let user_name = specifiers.into_iter().next();
-                return lor_ru::get_user_posts(&user_name, client);
+                let user_name = specifiers.into_iter().next().unwrap();
+                return lor_ru::get_user_posts(&user_name, client)
+                    .map(|comments| comments.into_iter()
+                        .map(|c| Box::new(c) as Box<UpdateDesc>)
+                        .collect());
             }
         }
     }
@@ -69,10 +76,10 @@ impl Pollable for Adapter {
 // the application is running.
 #[derive(new)]
 pub struct UserInfo {
-    user_id: i64, // internal user ID as saved in DB, mostly not used
-    user_name: String, // user name as provided by Connector
-    linked_user_name: String, // linked user name, as requested from Adapter
-    connector: Connector, // Connector itself, most of the time it's in `connected` state
-    adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
-    last_update: DateTime<Local>, // Last time update was queried for this instance
+    pub user_id: i64, // internal user ID as saved in DB, mostly not used
+    pub user_name: String, // user name as provided by Connector
+    pub linked_user_name: String, // linked user name, as requested from Adapter
+    pub connector: Connector, // Connector itself, most of the time it's in `connected` state
+    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
+    pub last_update: DateTime<Local>, // Last time update was queried for this instance
 }

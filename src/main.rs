@@ -68,8 +68,9 @@ fn main() {
 
 fn start_event_loop(data: GlobalData) {
     loop {
-        #[cfg(feature = "linux-org-ru")]
-        lor_ru::get_user_posts("Adonai".to_string(), &data.http_client);
+        for user_info in &data.demands {
+            user_info.connector.connect()
+        }
 
         debug!("Done polling, sleeping...");
         thread::sleep(Duration::from_millis(3000));
