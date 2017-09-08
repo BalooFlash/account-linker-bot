@@ -58,7 +58,7 @@ impl Connectable for Adapter {
 }
 
 impl Adapter {
-    fn poll<T: UpdateDesc>(&self, client: &Client, specifiers: &Vec<String>) -> Result<Vec<Box<UpdateDesc>>, CoreError> {
+    pub fn poll(&self, client: &Client, specifiers: &Vec<String>) -> Result<Vec<Box<UpdateDesc>>, CoreError> {
         match self {
             LinuxOrgRu => {
                 let user_name = specifiers.into_iter().next().unwrap();

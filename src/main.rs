@@ -68,8 +68,11 @@ fn main() {
 
 fn start_event_loop(data: GlobalData) {
     loop {
+        let http_client = &data.http_client;
         for user_info in &data.demands {
-            user_info.connector.connect()
+            thread::spawn(|| {
+                user_info.adapter.poll(http_client, &vec![user_info.user_name]);
+            });
         }
 
         debug!("Done polling, sleeping...");
