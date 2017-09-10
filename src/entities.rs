@@ -1,13 +1,20 @@
 use chrono::prelude::*;
-use modules::*;
 use reqwest::Client;
+use config::Config;
+
+use modules::*;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
     // Error retrieving LOR HTML page
     HttpError(::reqwest::Error),
     // Error converting response to string
-    ConvertError(::std::io::Error)
+    ConvertError(::std::io::Error),
+    // Error (de) serializing data
+    JsonSerializeError(::serde_json::Error),
+    // Our own error
+    #[error(msg_embedded, non_std, no_from)]
+    CustomError(String),
 }
 
 // Where do we request updates to be sent to
@@ -30,7 +37,7 @@ pub enum MarkdownType {
 
 /// Common trait that both Connectors and Adapters possess
 pub trait Connectable {
-    fn connect(&self);
+    fn connect(&self, client: &Client, cfg: &Config);
 }
 
 /// Update description
@@ -40,15 +47,15 @@ pub trait UpdateDesc {
 }
 
 impl Connectable for Connector {
-    fn connect(&self) {
+    fn connect(&self, client: &Client, cfg: &Config) {
         match self {
-            Matrix => {}
-        }
+            Matrix => matrix_org::connect(client, cfg),
+        };
     }
 }
 
 impl Connectable for Adapter {
-    fn connect(&self) {
+    fn connect(&self, client: &Client, cfg: &Config) {
         match self {
             LinuxOrgRu => {
                 // nothing is needed
@@ -66,6 +73,16 @@ impl Adapter {
                     .map(|comments| comments.into_iter()
                         .map(|c| Box::new(c) as Box<UpdateDesc>)
                         .collect());
+            }
+        }
+    }
+}
+
+impl Connector {
+    pub fn push(&self, client: &Client, updates: Vec<Box<UpdateDesc>>) {
+        match self {
+            Matrix => {
+                
             }
         }
     }

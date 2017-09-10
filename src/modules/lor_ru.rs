@@ -51,24 +51,27 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
     let doc = Document::from(body.as_str());
     let mut comments: Vec<LorComment> = vec![];
     for node in doc.find(Name("article").and(Class("msg"))) {
-        let (post_link, post_title);
-        match node.find(Name("h2").descendant(Name("a"))).next() {
+        // extract post data
+        let (post_link, post_title) = match node.find(Name("h2").descendant(Name("a"))).next() {
             None => continue,
             Some(post) => {
-                post_link = post.attr("href").unwrap_or_default().to_owned();
-                post_title = post.text();
+                let pl = post.attr("href").unwrap_or_default().to_owned();
+                let pt = post.text();
+                (pl, pt)
             }
-        }
+        };
 
-        let (author_link, author_name);
-        match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
+        // extract author data
+        let (author_link, author_name) = match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
             None => continue,
             Some(author) => {
-                author_link = author.attr("href").unwrap_or_default().to_owned();
-                author_name = author.text();
+                let al = author.attr("href").unwrap_or_default().to_owned();
+                let an = author.text();
+                (al, an)
             }
-        }
+        };
 
+        // extract comment data
         let (comment_date, comment_text);
         match node.find(Name("time")).next() {
             None => continue,

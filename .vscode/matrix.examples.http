@@ -1,0 +1,8 @@
+POST https://matrix.org/_matrix/client/r0/login HTTP/1.1
+Content-Type: application/json
+
+{
+    "type": "m.login.password",
+    "user": "lor-bot",
+    "password": "hCTUIzOFeKM4mxOigJGIY0arx"
+}

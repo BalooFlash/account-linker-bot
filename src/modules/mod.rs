@@ -7,6 +7,8 @@ use entities::MarkdownType;
 #[cfg(feature = "linux-org-ru")]
 pub mod lor_ru;
 
+pub mod matrix_org;
+
 pub struct UserComment {
     user_name: String,
     post_title: String,
