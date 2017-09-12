@@ -20,7 +20,7 @@ pub enum CoreError {
 // Where do we request updates to be sent to
 // and from where do we connect to link accounts
 pub enum Connector {
-    Matrix,
+    Matrix { access_token: String },
 }
 
 // Where do we retrieve updates from

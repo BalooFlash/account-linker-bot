@@ -80,7 +80,7 @@ fn main() {
     user_infos.push(UserInfo::new(0,
                                   "Kanedias@matrix.org".to_owned(),
                                   "Adonai".to_owned(),
-                                  Connector::Matrix,
+                                  Connector::Matrix { access_token: String::default() },
                                   Adapter::LinuxOrgRu,
                                   Local::now()));
 
@@ -89,13 +89,15 @@ fn main() {
     start_event_loop(app_data);
 }
 
-fn start_event_loop(data: GlobalData) {
+fn start_event_loop(mut data: GlobalData) {
     let http_client = &data.http_client;
     let conf = &data.config;
+    let demands = &mut data.demands;
     loop {
-        crossbeam::scope(|scope| for user_info in &data.demands {
+        crossbeam::scope(|scope| for user_info in demands.iter_mut() {
             let user_name = user_info.user_name.to_owned();
             scope.spawn(move || {
+                user_info.connector = Connector::Matrix { access_token: String::with_capacity(25)};
                 user_info.adapter.connect(http_client, conf);
                 user_info.connector.connect(http_client, conf);
                 let updates = match user_info.adapter.poll(http_client, &vec![user_name]) {
