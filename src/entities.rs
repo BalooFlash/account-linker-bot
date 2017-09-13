@@ -32,12 +32,12 @@ pub enum Adapter {
 pub enum MarkdownType {
     GitHub,
     Matrix,
-    Telegram
+    Telegram,
 }
 
 /// Common trait that both Connectors and Adapters possess
 pub trait Connectable {
-    fn connect(&self, client: &Client, cfg: &Config);
+    fn connect(&mut self, client: &Client, cfg: &Config);
 }
 
 /// Update description
@@ -47,15 +47,19 @@ pub trait UpdateDesc {
 }
 
 impl Connectable for Connector {
-    fn connect(&self, client: &Client, cfg: &Config) {
-        match self {
-            Matrix => matrix_org::connect(client, cfg),
+    fn connect(&mut self, client: &Client, cfg: &Config) {
+        match *self {
+            Connector::Matrix { access_token: ref mut token } => {
+                if token.is_empty() {
+                    *token = matrix_org::connect(client, cfg).unwrap_or_default()
+                }
+            }
         };
     }
 }
 
 impl Connectable for Adapter {
-    fn connect(&self, client: &Client, cfg: &Config) {
+    fn connect(&mut self, client: &Client, cfg: &Config) {
         match self {
             LinuxOrgRu => {
                 // nothing is needed
@@ -65,14 +69,18 @@ impl Connectable for Adapter {
 }
 
 impl Adapter {
-    pub fn poll(&self, client: &Client, specifiers: &Vec<String>) -> Result<Vec<Box<UpdateDesc>>, CoreError> {
+    pub fn poll(&self,
+                client: &Client,
+                specifiers: &Vec<String>)
+                -> Result<Vec<Box<UpdateDesc>>, CoreError> {
         match self {
             LinuxOrgRu => {
                 let user_name = specifiers.into_iter().next().unwrap();
-                return lor_ru::get_user_posts(&user_name, client)
-                    .map(|comments| comments.into_iter()
+                return lor_ru::get_user_posts(&user_name, client).map(|comments| {
+                    comments.into_iter()
                         .map(|c| Box::new(c) as Box<UpdateDesc>)
-                        .collect());
+                        .collect()
+                });
             }
         }
     }
@@ -81,9 +89,7 @@ impl Adapter {
 impl Connector {
     pub fn push(&self, client: &Client, updates: Vec<Box<UpdateDesc>>) {
         match self {
-            Matrix => {
-                
-            }
+            Matrix => {}
         }
     }
 }

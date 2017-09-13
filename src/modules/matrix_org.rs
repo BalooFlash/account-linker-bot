@@ -6,6 +6,7 @@ use config::Config;
 use std::io::Read;
 use std::result::Result;
 use entities::CoreError;
+use entities::Connector;
 
 use serde_json;
 
@@ -27,7 +28,7 @@ struct LoginAnswer {
     device_id: String,
 }
 
-pub fn connect(client: &Client, conf: &Config) -> Result<(), CoreError> {
+pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     let login = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
     let password = conf.get_str("matrix.password").expect("matrix.password property must be supplied in config");
     let post_body = Login {
@@ -46,7 +47,7 @@ pub fn connect(client: &Client, conf: &Config) -> Result<(), CoreError> {
     let mut response_json = String::new();
     response.read_to_string(&mut response_json)?;
     let response_body: LoginAnswer = serde_json::from_str(&response_json)?;
-    Ok(())
+    Ok(response_body.access_token)
 }
 
 pub fn post() -> Result<(), CoreError> {
