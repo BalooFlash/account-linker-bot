@@ -20,7 +20,7 @@ pub enum CoreError {
 // Where do we request updates to be sent to
 // and from where do we connect to link accounts
 pub enum Connector {
-    Matrix { access_token: String },
+    Matrix { access_token: String, last_batch: String },
 }
 
 // Where do we retrieve updates from
@@ -35,10 +35,6 @@ pub enum MarkdownType {
     Telegram,
 }
 
-/// Common trait that both Connectors and Adapters possess
-pub trait Connectable {
-    fn connect(&mut self, client: &Client, cfg: &Config);
-}
 
 /// Update description
 pub trait UpdateDesc {
@@ -46,25 +42,23 @@ pub trait UpdateDesc {
     fn as_markdown(&self, md_type: &MarkdownType) -> String;
 }
 
-impl Connectable for Connector {
-    fn connect(&mut self, client: &Client, cfg: &Config) {
+impl Connector {
+    pub fn connect(&mut self, client: &Client, cfg: &Config) {
         match *self {
-            Connector::Matrix { access_token: ref mut token } => {
+            Connector::Matrix { access_token: ref mut token, last_batch: _ } => {
                 if token.is_empty() {
                     *token = matrix_org::connect(client, cfg).unwrap_or_default()
                 }
             }
         };
     }
-}
 
-impl Connectable for Adapter {
-    fn connect(&mut self, client: &Client, cfg: &Config) {
-        match self {
-            LinuxOrgRu => {
-                // nothing is needed
+    pub fn process_updates(&mut self, client: &Client) {
+        match *self {
+            Connector::Matrix { access_token: ref token, last_batch: ref mut batch } => {
+                matrix_org::process_updates(client, token, batch);
             }
-        }
+        };
     }
 }
 
@@ -102,7 +96,7 @@ pub struct UserInfo {
     pub user_id: i64, // internal user ID as saved in DB, mostly not used
     pub user_name: String, // user name as provided by Connector
     pub linked_user_name: String, // linked user name, as requested from Adapter
-    pub connector: Connector, // Connector itself, most of the time it's in `connected` state
+    pub connector_type: String, // connector descriptor
     pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
     pub last_update: DateTime<Local>, // Last time update was queried for this instance
 }

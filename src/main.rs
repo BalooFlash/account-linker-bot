@@ -35,21 +35,20 @@ use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::error::Error;
+use std::collections::HashMap;
 
 mod entities;
 mod modules;
 
 use entities::*;
 
-#[cfg(feature = "linux-org-ru")]
-use modules::lor_ru;
-
 #[derive(new)]
 struct GlobalData {
     conn: SqliteConnection,
     config: Config,
     http_client: Client,
-    demands: Vec<UserInfo>,
+    connects: HashMap<String, Connector>,
+    requests: Vec<UserInfo>,
 }
 
 fn main() {
@@ -80,34 +79,44 @@ fn main() {
     user_infos.push(UserInfo::new(0,
                                   "Kanedias@matrix.org".to_owned(),
                                   "Adonai".to_owned(),
-                                  Connector::Matrix { access_token: String::default() },
+                                  "Matrix".to_owned(),
                                   Adapter::LinuxOrgRu,
                                   Local::now()));
 
-    let app_data = GlobalData::new(conn, cfg, client, user_infos);
+    let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
+    app_data.connects.insert("Matrix".to_owned(),
+                             Connector::Matrix { access_token: String::default(), last_batch: String::default() });
 
     start_event_loop(app_data);
 }
 
 fn start_event_loop(mut data: GlobalData) {
-    let http_client = &data.http_client;
     let conf = &data.config;
-    let demands = &mut data.demands;
+    let client = &data.http_client;
+    let requests = &mut data.requests;
     loop {
-        crossbeam::scope(|scope| for user_info in demands.iter_mut() {
-            let user_name = user_info.user_name.to_owned();
-            scope.spawn(move || {
-                user_info.connector = Connector::Matrix { access_token: String::with_capacity(25)};
-                user_info.adapter.connect(http_client, conf);
-                user_info.connector.connect(http_client, conf);
-                let updates = match user_info.adapter.poll(http_client, &vec![user_name]) {
-                    Ok(upd) => upd,
-                    Err(error) => {
-                        error!("Error while polling: {}", error.description());
-                        return;
-                    }
-                };
-            });
+        let connects = &mut data.connects;
+        crossbeam::scope(|scope| {
+            // connect to all upstreams
+            for upstream in connects.values_mut() {
+                upstream.connect(&client, conf);
+                upstream.process_updates(&client);
+            }
+
+            for user_info in requests.iter_mut() {
+                let user_name = user_info.user_name.to_owned();
+                let connects = &connects;
+                scope.spawn(move || {
+                    let connector = connects.get(&user_info.connector_type).expect("Must be known connector type!");
+                    let updates = match user_info.adapter.poll(client, &vec![user_name]) {
+                        Ok(upd) => upd,
+                        Err(error) => {
+                            error!("Error while polling: {}", error.description());
+                            return;
+                        }
+                    };
+                });
+            }
         });
 
         debug!("Done polling, sleeping...");

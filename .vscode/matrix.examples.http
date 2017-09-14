@@ -1,4 +1,4 @@
-POST https://matrix.org/_matrix/client/r0/login HTTP/1.1
+POST https://matrix.org/_matrix/client/r0/login
 Content-Type: application/json
 
 {
@@ -6,3 +6,7 @@ Content-Type: application/json
     "user": "lor-bot",
     "password": "hCTUIzOFeKM4mxOigJGIY0arx"
 }
+
+###
+
+GET https://matrix.org/_matrix/client/r0/sync?access_token=MDAxOGxvY2F0aW9uIG1hdHJpeC5vcmcKMDAxM2lkZW50aWZpZXIga2V5CjAwMTBjaWQgZ2VuID0gMQowMDI2Y2lkIHVzZXJfaWQgPSBAbG9yLWJvdDptYXRyaXgub3JnCjAwMTZjaWQgdHlwZSA9IGFjY2VzcwowMDIxY2lkIG5vbmNlID0gSFdeayZmRzZvO0VDZEd6YwowMDJmc2lnbmF0dXJlIIfumMXCAEW6YBVrslt0UVEHiH7xkbw-Owg4oFoBEJ5yCg
