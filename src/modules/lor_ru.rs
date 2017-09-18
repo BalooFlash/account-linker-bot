@@ -40,6 +40,10 @@ impl UpdateDesc for LorComment {
             MarkdownType::Telegram => self.as_string(),
         }
     }
+
+    fn timestamp(&self) -> DateTime<FixedOffset> {
+        self.common.comment_date
+    }
 }
 
 pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComment>, CoreError> {

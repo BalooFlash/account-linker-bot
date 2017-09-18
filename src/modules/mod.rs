@@ -30,4 +30,8 @@ impl UpdateDesc for UserComment {
     fn as_markdown(&self, md_type: &MarkdownType) -> String {
         self.as_string()
     }
+
+    fn timestamp(&self) -> DateTime<FixedOffset> {
+        self.comment_date
+    }
 }

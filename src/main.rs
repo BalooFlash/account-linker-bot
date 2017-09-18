@@ -10,16 +10,20 @@ extern crate select;
 
 extern crate config;
 
+extern crate serde;
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+
 #[macro_use]
 extern crate derive_new;
 #[macro_use]
 extern crate derive_error;
 extern crate crossbeam;
-extern crate serde;
-extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
 extern crate chrono;
+#[macro_use]
+extern crate itertools;
+extern crate regex;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -76,12 +80,12 @@ fn main() {
 
     // retrieve list of bindings from database
     let mut user_infos = vec![];
-    user_infos.push(UserInfo::new(0,
+    user_infos.push(UserInfo::new(0, "0".to_owned(),
                                   "Kanedias@matrix.org".to_owned(),
                                   "Adonai".to_owned(),
                                   "Matrix".to_owned(),
                                   Adapter::LinuxOrgRu,
-                                  Local::now()));
+                                  Local::now().with_timezone(Local::now().offset())));
 
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
     app_data.connects.insert("Matrix".to_owned(),
@@ -91,33 +95,18 @@ fn main() {
 }
 
 fn start_event_loop(mut data: GlobalData) {
-    let conf = &data.config;
-    let client = &data.http_client;
-    let requests = &mut data.requests;
-    loop {
-        let connects = &mut data.connects;
-        crossbeam::scope(|scope| {
-            // connect to all upstreams
-            for upstream in connects.values_mut() {
-                upstream.connect(&client, conf);
-                upstream.process_updates(&client);
-            }
 
-            for user_info in requests.iter_mut() {
-                let user_name = user_info.user_name.to_owned();
-                let connects = &connects;
-                scope.spawn(move || {
-                    let connector = connects.get(&user_info.connector_type).expect("Must be known connector type!");
-                    let updates = match user_info.adapter.poll(client, &vec![user_name]) {
-                        Ok(upd) => upd,
-                        Err(error) => {
-                            error!("Error while polling: {}", error.description());
-                            return;
-                        }
-                    };
-                });
-            }
-        });
+    loop {
+        // connect all upstreams and process invites/leaves etc.
+        for upstream in data.connects.values_mut() {
+            upstream.connect(&data.http_client, &data.config);
+            let new_demands = upstream.check_updates(&data.http_client);
+        }
+
+        for user_info in data.requests.iter_mut() {
+            let connector = data.connects.get(&user_info.connector_type).expect("Must be known connector type!");
+            let updates = user_info.poll(&data.http_client);
+        }
 
         debug!("Done polling, sleeping...");
         thread::sleep(Duration::from_millis(3000));
