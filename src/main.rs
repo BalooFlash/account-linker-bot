@@ -38,13 +38,13 @@ use std::thread;
 use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
-use std::error::Error;
 use std::collections::HashMap;
 
 mod entities;
 mod modules;
 
 use entities::*;
+use entities::UpstreamUpdate::*;
 
 #[derive(new)]
 struct GlobalData {
@@ -100,7 +100,21 @@ fn start_event_loop(mut data: GlobalData) {
         // connect all upstreams and process invites/leaves etc.
         for upstream in data.connects.values_mut() {
             upstream.connect(&data.http_client, &data.config);
-            let new_demands = upstream.check_updates(&data.http_client);
+            let updates = upstream.check_updates(&data.http_client);
+            let demands = match updates {
+                Err(error) => {
+                    error!("Couldn't retrieve updates from upstream: {}", error);
+                    continue;
+                },
+                Ok(demands) => demands,
+            };
+
+            for d in demands {
+                match d {
+                    Link(new_user_info) => data.requests.push(new_user_info),
+                    Unlink {..} => {},
+                }
+            }
         }
 
         for user_info in data.requests.iter_mut() {

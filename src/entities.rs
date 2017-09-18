@@ -44,6 +44,26 @@ pub enum MarkdownType {
     Telegram,
 }
 
+#[derive(Debug)]
+pub enum UpstreamUpdate {
+    Link(UserInfo),
+    Unlink { user_name: String, linked_user_name: String, adapter: Adapter },
+}
+
+// User info struct, which provides a link between Connector and Adapter
+// UserInfo struct instances are meant to be alive almost the same amount of time
+// the application is running.
+#[derive(Debug, new)]
+pub struct UserInfo {
+    pub user_id: i64, // internal user ID as saved in DB, mostly not used
+    pub chat_id: String, // chat in which to post updates
+    pub user_name: String, // user name as provided by Connector
+    pub linked_user_name: String, // linked user name, as requested from Adapter
+    pub connector_type: String, // connector descriptor
+    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
+    pub last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
+}
+
 
 /// Update description
 pub trait UpdateDesc {
@@ -66,11 +86,9 @@ impl Connector {
     pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>, CoreError> {
         match *self {
             Connector::Matrix { ref access_token, ref mut last_batch } => {
-                let result = matrix_org::process_updates(client, access_token, last_batch);
-                error!("Error deserializing: {:?}", result);
-                return result;
+                matrix_org::process_updates(client, access_token, last_batch)
             }
-        };
+        }
     }
 
     pub fn push(&self, client: &Client, updates: Vec<Box<UpdateDesc>>) {
@@ -96,26 +114,6 @@ impl Adapter {
             }
         }
     }
-}
-
-#[derive(Debug)]
-pub enum UpstreamUpdate {
-    Link(UserInfo),
-    Unlink { user_name: String, linked_user_name: String, adapter: Adapter },
-}
-
-// User info struct, which provides a link between Connector and Adapter
-// UserInfo struct instances are meant to be alive almost the same amount of time
-// the application is running.
-#[derive(Debug, new)]
-pub struct UserInfo {
-    pub user_id: i64, // internal user ID as saved in DB, mostly not used
-    pub chat_id: String, // chat in which to post updates
-    pub user_name: String, // user name as provided by Connector
-    pub linked_user_name: String, // linked user name, as requested from Adapter
-    pub connector_type: String, // connector descriptor
-    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
-    pub last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
 }
 
 impl UserInfo {

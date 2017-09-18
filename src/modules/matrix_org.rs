@@ -1,5 +1,4 @@
 use reqwest::Client;
-use reqwest::Response;
 
 use config::Config;
 
@@ -251,39 +250,46 @@ pub fn process_updates(client: &Client,
 
     // process link/unlink requests
     if !response_body.rooms.join.is_empty() {
+        let mut all_updates: Vec<UpstreamUpdate> = vec![];
         for room_events in response_body.rooms.join {
             let all_commands = COMMANDS.iter().join("|");
             let command_regex = Regex::new(&format!(r"({})\s+(\w+)\s+(\w+)", all_commands))
                 .expect("Must be valid regexp!");
             let room_id = room_events.0;
             let room_status = room_events.1.timeline;
-            room_status.events
+            let updates_of_this_room: Vec<UpstreamUpdate> = room_status.events
                 .iter() // command syntax is: /link LinuxOrgRu username
-                .filter_map(|event| match event.content { 
+                .filter_map(|event| match event.content { // check that message text corresponds to regex
                     EventContent::Text { ref body } => 
                         command_regex
-                            .captures(body)
-                            .map(|capture| (capture, event.sender)), 
+                            .captures(body) // ... and return it with the sender name
+                            .map(|capture| (capture, &event.sender)), 
                     _ => None 
                     })
-                .map(|capture| {
+                .filter_map(|capture| {
                     let user_name = capture.1;
                     let groups = capture.0;
                     let adapter = match &groups[1] {
-                        "LinuxOrgRu" => Some(Adapter::LinuxOrgRu),
-                        _ => None,
+                        "LinuxOrgRu" => Adapter::LinuxOrgRu,
+                        _ => return None, // skip unknown adapters
                     };
 
-                    UserInfo {  user_id: 0, 
-                                chat_id: room_id, 
-                                user_name: user_name, 
-                                linked_user_name: groups[2].to_owned(),
-                                connector_type: "Matrix".to_owned(),
-                                adapter: adapter.unwrap(),
-                                last_update: Utc.timestamp(0, 0),
-                    }
-                });
+                    Some(UpstreamUpdate::Link(UserInfo {  
+                        user_id: 0, 
+                        chat_id: room_id.to_owned(), 
+                        user_name: user_name.to_owned(), 
+                        linked_user_name: groups[2].to_owned(),
+                        connector_type: "Matrix".to_owned(),
+                        adapter: adapter,
+                        last_update: FixedOffset::east(0).timestamp(0, 0),
+                    }))
+                })
+                .collect();
+
+            all_updates.extend(updates_of_this_room);
         }
+
+        return Ok(all_updates);
     }
 
     Ok(Vec::default())
