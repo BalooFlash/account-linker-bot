@@ -95,13 +95,13 @@ fn main() {
 }
 
 fn start_event_loop(mut data: GlobalData) {
-
+    let client = &data.http_client;
     loop {
         // connect all upstreams and process invites/leaves etc.
         for upstream in data.connects.values_mut() {
-            upstream.connect(&data.http_client, &data.config);
-            let updates = upstream.check_updates(&data.http_client);
-            let demands = match updates {
+            upstream.connect(client, &data.config);
+            let new_demands = upstream.check_updates(client);
+            let demands = match new_demands {
                 Err(error) => {
                     error!("Couldn't retrieve updates from upstream: {}", error);
                     continue;
@@ -120,6 +120,9 @@ fn start_event_loop(mut data: GlobalData) {
         for user_info in data.requests.iter_mut() {
             let connector = data.connects.get(&user_info.connector_type).expect("Must be known connector type!");
             let updates = user_info.poll(&data.http_client);
+            for update in updates {
+                connector.push(client, update);
+            }
         }
 
         debug!("Done polling, sleeping...");

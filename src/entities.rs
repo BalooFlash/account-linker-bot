@@ -91,7 +91,7 @@ impl Connector {
         }
     }
 
-    pub fn push(&self, client: &Client, updates: Vec<Box<UpdateDesc>>) {
+    pub fn push(&self, client: &Client, update: Box<UpdateDesc>) {
         match self {
             Matrix => {}
         }
@@ -137,6 +137,15 @@ impl UserInfo {
         if self.last_update == current_latest_update {
             info!("No updates for {}...", self.linked_user_name);
             return Vec::default()
+        }
+
+        // if we have last_update set to zero then this we are newly created user_info
+        // in this case, fetch all updates from the adapter and don't report them,
+        // instead, skip all the updates and set our timestamp to newest
+        if self.last_update.timestamp() == 0 {
+            info!("Updating newly created user info timestamp to latest available: {}", current_latest_update);
+            self.last_update = current_latest_update;
+            return Vec::default();
         }
 
         let new_updates: Vec<Box<UpdateDesc>> = updates.into_iter().filter(|u| u.timestamp() > self.last_update).collect();
