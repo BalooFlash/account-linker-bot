@@ -27,6 +27,7 @@ derive-error = "0.0.3"  # generate From for Errors
 crossbeam = "0.3.0"     # scoped thread spawning
 itertools = "0.6.2"
 regex = "0.2"
+uuid = { version = "0.4", features = ["serde", "v4"] }
 
 [features]
 default = [ "linux-org-ru" ]

@@ -68,7 +68,7 @@ pub struct UserInfo {
 /// Update description
 pub trait UpdateDesc {
     fn as_string(&self) -> String;
-    fn as_markdown(&self, md_type: &MarkdownType) -> String;
+    fn as_markdown(&self, md_type: MarkdownType) -> String;
     fn timestamp(&self) -> DateTime<FixedOffset>;
 }
 
@@ -91,9 +91,11 @@ impl Connector {
         }
     }
 
-    pub fn push(&self, client: &Client, update: Box<UpdateDesc>) {
-        match self {
-            Matrix => {}
+    pub fn push(&self, client: &Client, user_info: &UserInfo, update: Box<UpdateDesc>) {
+        match *self {
+            Connector::Matrix {ref access_token, ..} => {
+                matrix_org::post_message(client, access_token, &user_info.chat_id, update.as_markdown(MarkdownType::Matrix));
+            }
         }
     }
 }
@@ -103,8 +105,8 @@ impl Adapter {
                 client: &Client,
                 specifiers: Vec<String>)
                 -> Result<Vec<Box<UpdateDesc>>, CoreError> {
-        match self {
-            LinuxOrgRu => {
+        match *self {
+            Adapter::LinuxOrgRu => {
                 let user_name = specifiers.into_iter().next().unwrap();
                 return lor_ru::get_user_posts(&user_name, client).map(|comments| {
                     comments.into_iter()

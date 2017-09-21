@@ -26,8 +26,8 @@ impl UpdateDesc for LorComment {
         self.common.as_string()
     }
 
-    fn as_markdown(&self, md_type: &MarkdownType) -> String {
-        match *md_type {
+    fn as_markdown(&self, md_type: MarkdownType) -> String {
+        match md_type {
             MarkdownType::Matrix | MarkdownType::GitHub => 
                 format!("{}: [{}]({}) added comment to post [{}]({}):\n\t{}",
                     self.common.comment_date,

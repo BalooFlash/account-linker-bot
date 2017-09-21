@@ -7,6 +7,7 @@ use serde_json;
 use itertools::Itertools;
 use regex::Regex;
 use chrono::prelude::*;
+use uuid::Uuid;
 
 use std::io::Read;
 use std::result::Result;
@@ -235,9 +236,9 @@ pub fn process_updates(client: &Client,
     }
 
     // receive sync object - events, invites etc
-    let mut response_json = String::new();
-    response.read_to_string(&mut response_json)?;
-    let response_body: SyncAnswer = serde_json::from_str(&response_json)?;
+    let mut response_content = String::new();
+    response.read_to_string(&mut response_content)?;
+    let response_body: SyncAnswer = serde_json::from_str(&response_content)?;
     *last_batch = response_body.next_batch;
 
     // process invites
@@ -293,4 +294,23 @@ pub fn process_updates(client: &Client,
     }
 
     Ok(Vec::default())
+}
+
+pub fn post_message(client: &Client, access_token: &String, chat_id: &String, text: String) -> Result<String, CoreError> {
+    let uuid = Uuid::new_v4().hyphenated().to_string();
+    let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid + "?access_token=" + access_token;
+
+    let post_content = EventContent::Notice { body: text };
+    let body_json = serde_json::to_string(&post_content)?;
+
+    let mut response = client.post(&post_msg_url)?.body(body_json).send()?;
+    let mut response_content = String::new();
+    response.read_to_string(&mut response_content)?;
+    if !response.status().is_success() {
+        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
+    }
+
+    let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
+    let event_id = response_body.remove("event_id").expect("Answer must contain event id in case of successful response");
+    Ok(event_id)
 }

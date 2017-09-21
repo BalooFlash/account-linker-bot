@@ -24,6 +24,7 @@ extern crate chrono;
 #[macro_use]
 extern crate itertools;
 extern crate regex;
+extern crate uuid;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -121,7 +122,7 @@ fn start_event_loop(mut data: GlobalData) {
             let connector = data.connects.get(&user_info.connector_type).expect("Must be known connector type!");
             let updates = user_info.poll(&data.http_client);
             for update in updates {
-                connector.push(client, update);
+                connector.push(client, user_info, update);
             }
         }
 
