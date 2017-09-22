@@ -57,7 +57,7 @@ struct RoomInviteState {
 #[derive(Serialize, Deserialize)]
 struct RoomJoinState {
     /// The timeline of messages and state changes in the room.
-    timeline: Timeline, 
+    timeline: Timeline,
 
     // we don't need those yet
     //state: EventsBatch,
@@ -83,10 +83,6 @@ struct Timeline {
 struct Event {
     ///  The globally unique event identifier.
     event_id: String,
-
-    /// The type of event.
-    #[serde(rename = "type")]
-    event_type: String,
 
     /// Timestamp in milliseconds on originating homeserver when this event was sent.
     origin_server_ts: u64,
@@ -122,8 +118,37 @@ struct Unsigned {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "msgtype")]
+#[serde(tag = "type", content = "content")]
 enum EventContent {
+    /// This event is used when sending messages in a room. Messages are not limited to be text.
+    /// The msgtype key outlines the type of message, e.g. text, audio, image, video, etc.
+    /// The body key is text and MUST be used with every kind of msgtype as a fallback mechanism for when
+    /// a client cannot render a message. This allows clients to display something even if it is just plain text.
+    /// For more information on msgtypes, see m.room.message msgtypes.
+    #[serde(rename = "m.room.message")]
+    Message(MessageEventContent),
+
+    /// A room has an opaque room ID which is not human-friendly to read. A room alias is human-friendly,
+    /// but not all rooms have room aliases. The room name is a human-friendly string designed to be displayed
+    /// to the end-user. The room name is not unique, as multiple rooms can have the same room name set.
+    #[serde(rename = "m.room.name")]
+    Name { name: String },
+
+    /// A topic is a short message detailing what is currently being discussed in the room.
+    /// It can also be used as a way to display extra information about the room, which may not be
+    /// suitable for the room name. The room topic can also be set when creating a room using /createRoom
+    /// with the topic key.
+    #[serde(rename = "m.room.topic")]
+    Topic { topic: String },
+
+    /// A picture that is associated with the room. This can be displayed alongside the room information.
+    #[serde(rename = "m.room.avatar")]
+    Avatar { url: String }, // not all fields are taken
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "msgtype")]
+enum MessageEventContent {
     /// message is the most basic message and is used to represent text.
     #[serde(rename = "m.text")]
     Text { body: String },
@@ -161,7 +186,7 @@ enum EventContent {
         thumbnail_info: Option<ImageInfo>,
         thumbnail_url: Option<String>,
         url: String,
-    }, 
+    },
 
     // m.location, m.video, m.audio are not so interesting for us
 }
@@ -179,7 +204,7 @@ struct ImageInfo {
     w: u32,
 
     /// Size of the image in bytes.
-    size: u64, 
+    size: u64,
 
     // orientation of image, undocumented
     //orientation: u32,
@@ -196,10 +221,12 @@ struct FileInfo {
 }
 
 pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
-    let login = conf.get_str("matrix.login")
-        .expect("matrix.login property must be supplied in config");
-    let password = conf.get_str("matrix.password")
-        .expect("matrix.password property must be supplied in config");
+    let login = conf.get_str("matrix.login").expect(
+        "matrix.login property must be supplied in config",
+    );
+    let password = conf.get_str("matrix.password").expect(
+        "matrix.password property must be supplied in config",
+    );
     let post_body = Login {
         login_type: "m.login.password".to_owned(),
         user: login,
@@ -210,7 +237,10 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     let body_json = serde_json::to_string(&post_body)?;
     let mut response = client.post(&login_url)?.body(body_json).send()?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
+        return Err(CoreError::CustomError(format!(
+            "Connect returned invalid code: {}",
+            response.status()
+        )));
     }
 
     let mut response_json = String::new();
@@ -219,10 +249,11 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     Ok(response_body.access_token)
 }
 
-pub fn process_updates(client: &Client,
-                       token: &String,
-                       last_batch: &mut String)
-                       -> Result<Vec<UpstreamUpdate>, CoreError> {
+pub fn process_updates(
+    client: &Client,
+    token: &String,
+    last_batch: &mut String,
+) -> Result<Vec<UpstreamUpdate>, CoreError> {
     // sync is the main routine in matrix.org lifecycle
     let sync_url = MATRIX_API_ENDPOINT.to_owned() + "/sync";
     let mut request_url = sync_url + "?access_token=" + token;
@@ -232,7 +263,10 @@ pub fn process_updates(client: &Client,
 
     let mut response = client.get(&request_url)?.send()?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
+        return Err(CoreError::CustomError(format!(
+            "Connect returned invalid code: {}",
+            response.status()
+        )));
     }
 
     // receive sync object - events, invites etc
@@ -260,13 +294,16 @@ pub fn process_updates(client: &Client,
             let room_status = room_events.1.timeline;
             let updates_of_this_room: Vec<UpstreamUpdate> = room_status.events
                 .iter() // command syntax is: /link LinuxOrgRu username
-                .filter_map(|event| match event.content { // check that message text corresponds to regex
-                    EventContent::Text { ref body } => 
-                        command_regex
-                            .captures(body) // ... and return it with the sender name
-                            .map(|capture| (capture, &event.sender)), 
-                    _ => None 
-                    })
+                .filter_map(|event| { // check that message text corresponds to regex
+                    if let EventContent::Message(ref msg) = event.content {
+                        if let &MessageEventContent::Text { ref body } = msg {
+                            return command_regex
+                                .captures(body) // ... and return it with the sender name
+                                .map(|capture| (capture, &event.sender));
+                        }
+                    }
+                    None
+                })
                 .filter_map(|capture| {
                     let user_name = capture.1;
                     let groups = capture.0;
@@ -296,21 +333,32 @@ pub fn process_updates(client: &Client,
     Ok(Vec::default())
 }
 
-pub fn post_message(client: &Client, access_token: &String, chat_id: &String, text: String) -> Result<String, CoreError> {
+pub fn post_message(
+    client: &Client,
+    access_token: &String,
+    chat_id: &String,
+    text: String,
+) -> Result<String, CoreError> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
-    let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid + "?access_token=" + access_token;
+    let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
+        "?access_token=" + access_token;
 
-    let post_content = EventContent::Notice { body: text };
+    let post_content = MessageEventContent::Notice { body: text };
     let body_json = serde_json::to_string(&post_content)?;
 
     let mut response = client.post(&post_msg_url)?.body(body_json).send()?;
     let mut response_content = String::new();
     response.read_to_string(&mut response_content)?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
+        return Err(CoreError::CustomError(format!(
+            "Connect returned invalid code: {}",
+            response.status()
+        )));
     }
 
     let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
-    let event_id = response_body.remove("event_id").expect("Answer must contain event id in case of successful response");
+    let event_id = response_body.remove("event_id").expect(
+        "Answer must contain event id in case of successful response",
+    );
     Ok(event_id)
 }

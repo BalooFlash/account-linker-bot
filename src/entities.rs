@@ -119,9 +119,10 @@ impl Adapter {
 }
 
 impl UserInfo {
+    
     pub fn poll(&mut self, client: &Client) -> Vec<Box<UpdateDesc>> {
-        let user_name = self.user_name.to_owned();
-        let update_result = self.adapter.poll(client, vec![user_name]);
+        let linked_user_name = self.linked_user_name.to_owned();
+        let update_result = self.adapter.poll(client, vec![linked_user_name]);
         let updates = match update_result {
             Err(error) => {
                 error!("Error while polling: {}", error.description());
