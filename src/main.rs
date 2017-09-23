@@ -72,30 +72,24 @@ fn main() {
 
     // init bot configuration
     let mut cfg = Config::new();
-    cfg.merge(File::with_name("conf/bot-config.yml")).expect(
-        "Must be able to parse config in conf/bot-config.yml",
-    );
+    cfg.merge(File::with_name("conf/bot-config.yml")).expect("Must be able to parse config in conf/bot-config.yml");
 
     // retrieve list of bindings from database
     let mut user_infos = vec![];
-    user_infos.push(UserInfo::new(
-        0,
-        "0".to_owned(),
-        "Kanedias@matrix.org".to_owned(),
-        "Adonai".to_owned(),
-        "Matrix".to_owned(),
-        Adapter::LinuxOrgRu,
-        FixedOffset::east(0).timestamp(0, 0),
-    ));
+    user_infos.push(UserInfo::new(0,
+                                  "0".to_owned(),
+                                  "Kanedias@matrix.org".to_owned(),
+                                  "Adonai".to_owned(),
+                                  "Matrix".to_owned(),
+                                  Adapter::LinuxOrgRu,
+                                  FixedOffset::east(0).timestamp(0, 0)));
 
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
-    app_data.connects.insert(
-        "Matrix".to_owned(),
-        Connector::Matrix {
-            access_token: String::default(),
-            last_batch: String::default(),
-        },
-    );
+    app_data.connects.insert("Matrix".to_owned(),
+                             Connector::Matrix {
+                                 access_token: String::default(),
+                                 last_batch: String::default(),
+                             });
 
     start_event_loop(app_data);
 }
@@ -109,7 +103,7 @@ fn start_event_loop(mut data: GlobalData) {
             let new_demands = upstream.check_updates(client);
             let demands = match new_demands {
                 Err(error) => {
-                    error!("Couldn't retrieve updates from upstream: {}", error);
+                    error!("Couldn't retrieve updates from upstream: {:?}", error);
                     continue;
                 }
                 Ok(demands) => demands,
@@ -124,9 +118,7 @@ fn start_event_loop(mut data: GlobalData) {
         }
 
         for user_info in data.requests.iter_mut() {
-            let connector = data.connects.get(&user_info.connector_type).expect(
-                "Must be known connector type!",
-            );
+            let connector = data.connects.get(&user_info.connector_type).expect("Must be known connector type!");
             let updates = user_info.poll(&data.http_client);
             for update in updates {
                 connector.push(client, user_info, update);

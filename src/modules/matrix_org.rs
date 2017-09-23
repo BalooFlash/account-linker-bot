@@ -57,7 +57,7 @@ struct RoomInviteState {
 #[derive(Serialize, Deserialize)]
 struct RoomJoinState {
     /// The timeline of messages and state changes in the room.
-    timeline: Timeline,
+    timeline: Timeline, 
 
     // we don't need those yet
     //state: EventsBatch,
@@ -78,7 +78,6 @@ struct Timeline {
     events: Vec<Event>,
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct Event {
     ///  The globally unique event identifier.
@@ -89,6 +88,9 @@ struct Event {
 
     /// The MXID of the user who sent this event.
     sender: String,
+
+    /// Event that this event redacts
+    redacts: Option<String>,
 
     /// Information about this event which was not sent by the originating homeserver
     unsigned: Unsigned,
@@ -107,8 +109,7 @@ struct Unsigned {
     /// Optional. The previous content for this state.
     /// This will be present only for state events appearing in the timeline.
     /// If this is not a state event, or there is no previous content, this key will be missing.
-    prev_content: Option<EventContent>,
-
+    // prev_content: Option<EventContent>, // can't see how this maps without "type"
     /// Time in milliseconds since the event was sent.
     age: u32,
 
@@ -120,6 +121,65 @@ struct Unsigned {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "content")]
 enum EventContent {
+    /// This event is sent by a homeserver directly to inform of changes to the list of aliases it knows about for that room.
+    /// The state_key for this event is set to the homeserver which owns the room alias. The entire set of known aliases for the room
+    /// is the union of all the m.room.aliases events, one for each homeserver. Clients should check the validity of any room alias given
+    /// in this list before presenting it to the user as trusted fact. The lists given by this event should be considered simply as advice
+    /// on which aliases might exist, for which the client can perform the lookup to confirm whether it receives the correct room ID.
+    #[serde(rename = "m.room.aliases")]
+    Aliases { aliases: Vec<String> },
+
+    /// This event is used to inform the room about which alias should be considered the canonical one.
+    /// This could be for display purposes or as suggestion to users which alias to use to advertise the room.
+    #[serde(rename = "m.room.canonical_alias")]
+    CanonicalAlias { alias: String },
+
+    /// This is the first event in a room and cannot be changed. It acts as the root of all other events.
+    #[serde(rename = "m.room.create")]
+    Create {
+        #[serde(rename = "m.federate")]
+        federate: Option<bool>,
+        creator: String,
+    },
+
+    /// A room may be public meaning anyone can join the room without any prior action.
+    /// Alternatively, it can be invite meaning that a user who wishes to join the room must first receive an invite to the room from someone
+    /// already inside of the room. Currently, knock and private are reserved keywords which are not implemented.
+    #[serde(rename = "m.room.join_rules")]
+    JoinRules { join_rule: String }, //  ["public", "knock", "invite", "private"]
+
+    /// Adjusts the membership state for a user in a room. It is preferable to use the membership APIs (/rooms/<room id>/invite etc)
+    /// when performing membership actions rather than adjusting the state directly as there are a restricted set of valid transformations.
+    /// For example, user A cannot force user B to join a room, and trying to force this state change directly will fail.
+    #[serde(rename = "m.room.member")]
+    Member {
+        // third_party_invite: Invite
+        membership: String, // ["invite", "join", "knock", "leave", "ban"]
+        avatar_url: Option<String>,
+        displayname: Option<String>,
+    },
+
+    /// This event specifies the minimum level a user must have in order to perform a certain action. It also specifies the levels of each user in the room.
+    #[serde(rename = "m.room.power_levels")]
+    PowerLevels {
+        events_default: u32,
+        invite: u32,
+        state_default: u32,
+        redact: u32,
+        ban: u32,
+        users_default: u32,
+        events: HashMap<String, u32>,
+        kick: u32,
+        users: HashMap<String, u32>,
+    },
+
+    /// Events can be redacted by either room or server admins. Redacting an event means that all keys not required by the protocol are stripped off,
+    /// allowing admins to remove offensive or illegal content that may have been attached to any event. This cannot be undone, allowing server owners to
+    /// physically delete the offending data. There is also a concept of a moderator hiding a message event, which can be undone, but cannot be applied to state events.
+    /// The event that has been redacted is specified in the redacts event level key.
+    #[serde(rename = "m.room.redaction")]
+    Redaction { reason: String },
+
     /// This event is used when sending messages in a room. Messages are not limited to be text.
     /// The msgtype key outlines the type of message, e.g. text, audio, image, video, etc.
     /// The body key is text and MUST be used with every kind of msgtype as a fallback mechanism for when
@@ -186,7 +246,7 @@ enum MessageEventContent {
         thumbnail_info: Option<ImageInfo>,
         thumbnail_url: Option<String>,
         url: String,
-    },
+    }, 
 
     // m.location, m.video, m.audio are not so interesting for us
 }
@@ -204,7 +264,7 @@ struct ImageInfo {
     w: u32,
 
     /// Size of the image in bytes.
-    size: u64,
+    size: u64, 
 
     // orientation of image, undocumented
     //orientation: u32,
@@ -221,12 +281,8 @@ struct FileInfo {
 }
 
 pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
-    let login = conf.get_str("matrix.login").expect(
-        "matrix.login property must be supplied in config",
-    );
-    let password = conf.get_str("matrix.password").expect(
-        "matrix.password property must be supplied in config",
-    );
+    let login = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
+    let password = conf.get_str("matrix.password").expect("matrix.password property must be supplied in config");
     let post_body = Login {
         login_type: "m.login.password".to_owned(),
         user: login,
@@ -237,10 +293,7 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     let body_json = serde_json::to_string(&post_body)?;
     let mut response = client.post(&login_url)?.body(body_json).send()?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!(
-            "Connect returned invalid code: {}",
-            response.status()
-        )));
+        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
     let mut response_json = String::new();
@@ -249,11 +302,10 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     Ok(response_body.access_token)
 }
 
-pub fn process_updates(
-    client: &Client,
-    token: &String,
-    last_batch: &mut String,
-) -> Result<Vec<UpstreamUpdate>, CoreError> {
+pub fn process_updates(client: &Client,
+                       token: &String,
+                       last_batch: &mut String)
+                       -> Result<Vec<UpstreamUpdate>, CoreError> {
     // sync is the main routine in matrix.org lifecycle
     let sync_url = MATRIX_API_ENDPOINT.to_owned() + "/sync";
     let mut request_url = sync_url + "?access_token=" + token;
@@ -263,10 +315,7 @@ pub fn process_updates(
 
     let mut response = client.get(&request_url)?.send()?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!(
-            "Connect returned invalid code: {}",
-            response.status()
-        )));
+        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
     // receive sync object - events, invites etc
@@ -333,15 +382,14 @@ pub fn process_updates(
     Ok(Vec::default())
 }
 
-pub fn post_message(
-    client: &Client,
-    access_token: &String,
-    chat_id: &String,
-    text: String,
-) -> Result<String, CoreError> {
+pub fn post_message(client: &Client,
+                    access_token: &String,
+                    chat_id: &String,
+                    text: String)
+                    -> Result<String, CoreError> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
-        "?access_token=" + access_token;
+                       "?access_token=" + access_token;
 
     let post_content = MessageEventContent::Notice { body: text };
     let body_json = serde_json::to_string(&post_content)?;
@@ -350,15 +398,31 @@ pub fn post_message(
     let mut response_content = String::new();
     response.read_to_string(&mut response_content)?;
     if !response.status().is_success() {
-        return Err(CoreError::CustomError(format!(
-            "Connect returned invalid code: {}",
-            response.status()
-        )));
+        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
     let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
-    let event_id = response_body.remove("event_id").expect(
-        "Answer must contain event id in case of successful response",
-    );
+    let event_id = response_body.remove("event_id")
+        .expect("Answer must contain event id in case of successful response");
     Ok(event_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json;
+
+    use std::path::Path;
+    use std::fs::File;
+    use std::io::Read;
+
+    use modules::matrix_org::SyncAnswer;
+
+    #[test]
+    fn test_deserialize() {
+        let mut file = File::open("tests/bot-response.json").expect("File must be present!");
+        let mut get_body = String::new();
+        file.read_to_string(&mut get_body).expect("File must be present!");
+        let response_body: SyncAnswer = serde_json::from_str(&get_body).expect("File must be deserializable!");
+    }
+
 }
