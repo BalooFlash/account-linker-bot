@@ -28,17 +28,27 @@ impl UpdateDesc for LorComment {
 
     fn as_markdown(&self, md_type: MarkdownType) -> String {
         match md_type {
-            MarkdownType::Matrix | MarkdownType::GitHub => 
+            MarkdownType::Matrix | MarkdownType::GitHub => {
                 format!("{}: [{}]({}) added comment to post [{}]({}):\n\t{}",
-                    self.common.comment_date,
-                    self.common.user_name,
-                    self.author_link,
-                    self.common.post_title,
-                    self.post_link,
-                    self.common.comment_text
-                ),
+                        self.common.comment_date,
+                        self.common.user_name,
+                        self.author_link,
+                        self.common.post_title,
+                        self.post_link,
+                        self.common.comment_text)
+            }
             MarkdownType::Telegram => self.as_string(),
         }
+    }
+
+    fn as_html(&self) -> String {
+        format!("{}: <a href='{}'>{}</a> added comment to post <a href='{}'>{}</a>:<br/>{}",
+                self.common.comment_date,
+                self.author_link,
+                self.common.user_name,
+                self.post_link,
+                self.common.post_title,
+                self.common.comment_text)
     }
 
     fn timestamp(&self) -> DateTime<FixedOffset> {
@@ -59,7 +69,7 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
         let (post_link, post_title) = match node.find(Name("h2").descendant(Name("a"))).next() {
             None => continue,
             Some(post) => {
-                let pl = post.attr("href").unwrap_or_default().to_owned();
+                let pl = post.attr("href").unwrap_or_default();
                 let pt = post.text();
                 (pl, pt)
             }
@@ -69,7 +79,7 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
         let (author_link, author_name) = match node.find(Name("a").and(Attr("itemprop", "creator"))).next() {
             None => continue,
             Some(author) => {
-                let al = author.attr("href").unwrap_or_default().to_owned();
+                let al = author.attr("href").unwrap_or_default();
                 let an = author.text();
                 (al, an)
             }
@@ -81,9 +91,8 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
             None => continue,
             Some(time) => {
                 let instant = Local::now().with_timezone(Local::now().offset());
-                comment_date = time.attr("datetime").map_or(instant, |t| {
-                    DateTime::parse_from_rfc3339(t).unwrap_or(instant)
-                })
+                comment_date = time.attr("datetime").map_or(instant,
+                                                            |t| DateTime::parse_from_rfc3339(t).unwrap_or(instant))
             }
         }
         match node.find(Name("div").and(Class("msg_body")).descendant(Name("p")))
@@ -101,8 +110,8 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
                 comment_date: comment_date,
                 comment_text: comment_text,
             },
-            post_link: post_link,
-            author_link: author_link,
+            post_link: LOR_URL.to_owned() + post_link,
+            author_link: LOR_URL.to_owned() + author_link,
         });
     }
 

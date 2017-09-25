@@ -10,3 +10,15 @@ Content-Type: application/json
 ###
 
 GET https://matrix.org/_matrix/client/r0/sync?access_token=MDAxOGxvY2F0aW9uIG1hdHJpeC5vcmcKMDAxM2lkZW50aWZpZXIga2V5CjAwMTBjaWQgZ2VuID0gMQowMDI2Y2lkIHVzZXJfaWQgPSBAbG9yLWJvdDptYXRyaXgub3JnCjAwMTZjaWQgdHlwZSA9IGFjY2VzcwowMDIxY2lkIG5vbmNlID0gSFdeayZmRzZvO0VDZEd6YwowMDJmc2lnbmF0dXJlIIfumMXCAEW6YBVrslt0UVEHiH7xkbw-Owg4oFoBEJ5yCg
+
+###
+
+PUT https://matrix.org/_matrix/client/r0/rooms/!uJmtoWFPrcGHhkWnpP:matrix.org/send/m.room.message/5?access_token=MDAxOGxvY2F0aW9uIG1hdHJpeC5vcmcKMDAxM2lkZW50aWZpZXIga2V5CjAwMTBjaWQgZ2VuID0gMQowMDI2Y2lkIHVzZXJfaWQgPSBAbG9yLWJvdDptYXRyaXgub3JnCjAwMTZjaWQgdHlwZSA9IGFjY2VzcwowMDIxY2lkIG5vbmNlID0gSFdeayZmRzZvO0VDZEd6YwowMDJmc2lnbmF0dXJlIIfumMXCAEW6YBVrslt0UVEHiH7xkbw-Owg4oFoBEJ5yCg
+Content-Type: application/json
+
+{
+  "msgtype": "m.text",
+  "format": "org.matrix.custom.html",
+  "formatted_body": "<a href='https://linux.org.ru/forum/talks/13701522?cid=13703076'>алала</a>",
+  "body": "[Переезжать в Нидерланды или нет](https://linux.org.ru/forum/talks/13701522?cid=13703076)"
+}

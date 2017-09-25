@@ -27,7 +27,11 @@ impl UpdateDesc for UserComment {
         )
     }
 
-    fn as_markdown(&self, md_type: MarkdownType) -> String {
+    fn as_markdown(&self, _: MarkdownType) -> String {
+        self.as_string()
+    }
+
+    fn as_html(&self) -> String {
         self.as_string()
     }
 

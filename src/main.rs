@@ -11,6 +11,7 @@ extern crate select;
 extern crate config;
 
 extern crate serde_json;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
@@ -76,13 +77,13 @@ fn main() {
 
     // retrieve list of bindings from database
     let mut user_infos = vec![];
-    user_infos.push(UserInfo::new(0,
+    /*user_infos.push(UserInfo::new(0,
                                   "0".to_owned(),
                                   "Kanedias@matrix.org".to_owned(),
                                   "Adonai".to_owned(),
                                   "Matrix".to_owned(),
                                   Adapter::LinuxOrgRu,
-                                  FixedOffset::east(0).timestamp(0, 0)));
+                                  FixedOffset::east(0).timestamp(0, 0)));*/
 
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
     app_data.connects.insert("Matrix".to_owned(),
@@ -112,7 +113,8 @@ fn start_event_loop(mut data: GlobalData) {
             for d in demands {
                 match d {
                     Link(new_user_info) => data.requests.push(new_user_info),
-                    Unlink { .. } => {}
+                    Unlink { .. } => {},
+                    UnlinkAll { .. } => {},
                 }
             }
         }

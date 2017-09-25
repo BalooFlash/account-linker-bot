@@ -2,7 +2,7 @@ use reqwest::Client;
 
 use config::Config;
 
-use serde_json;
+use serde_json::{self, Value};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -83,6 +83,10 @@ struct Event {
     ///  The globally unique event identifier.
     event_id: String,
 
+    /// The type of event. This SHOULD be namespaced
+    #[serde(rename = "type")]
+    event_type: String,
+
     /// Timestamp in milliseconds on originating homeserver when this event was sent.
     origin_server_ts: u64,
 
@@ -109,7 +113,7 @@ struct Unsigned {
     /// Optional. The previous content for this state.
     /// This will be present only for state events appearing in the timeline.
     /// If this is not a state event, or there is no previous content, this key will be missing.
-    // prev_content: Option<EventContent>, // can't see how this maps without "type"
+    prev_content: Option<EventContent>,
     /// Time in milliseconds since the event was sent.
     age: u32,
 
@@ -119,23 +123,37 @@ struct Unsigned {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", content = "content")]
+#[serde(untagged)]
 enum EventContent {
     /// This event is sent by a homeserver directly to inform of changes to the list of aliases it knows about for that room.
     /// The state_key for this event is set to the homeserver which owns the room alias. The entire set of known aliases for the room
     /// is the union of all the m.room.aliases events, one for each homeserver. Clients should check the validity of any room alias given
     /// in this list before presenting it to the user as trusted fact. The lists given by this event should be considered simply as advice
     /// on which aliases might exist, for which the client can perform the lookup to confirm whether it receives the correct room ID.
-    #[serde(rename = "m.room.aliases")]
     Aliases { aliases: Vec<String> },
 
     /// This event is used to inform the room about which alias should be considered the canonical one.
     /// This could be for display purposes or as suggestion to users which alias to use to advertise the room.
-    #[serde(rename = "m.room.canonical_alias")]
     CanonicalAlias { alias: String },
 
+    /// This event is used to inform the room about which alias should be considered the canonical one.
+    /// This could be for display purposes or as suggestion to users which alias to use to advertise the room.
+    Tag { tags: HashMap<String, Tag> },
+
+    /// Informs the client of a user's presence state change.
+    Presense {
+        user_id: String,
+        presense: String,
+        avatar_url: Option<String>,
+        last_active_ago: Option<u64>,
+        currently_active: Option<bool>,
+        displayname: Option<String>,
+    },
+
+    /// This event controls whether a user can see the events that happened in a room from before they joined.
+    HistoryVisibility { history_visibility: String },
+
     /// This is the first event in a room and cannot be changed. It acts as the root of all other events.
-    #[serde(rename = "m.room.create")]
     Create {
         #[serde(rename = "m.federate")]
         federate: Option<bool>,
@@ -145,13 +163,11 @@ enum EventContent {
     /// A room may be public meaning anyone can join the room without any prior action.
     /// Alternatively, it can be invite meaning that a user who wishes to join the room must first receive an invite to the room from someone
     /// already inside of the room. Currently, knock and private are reserved keywords which are not implemented.
-    #[serde(rename = "m.room.join_rules")]
     JoinRules { join_rule: String }, //  ["public", "knock", "invite", "private"]
 
     /// Adjusts the membership state for a user in a room. It is preferable to use the membership APIs (/rooms/<room id>/invite etc)
     /// when performing membership actions rather than adjusting the state directly as there are a restricted set of valid transformations.
     /// For example, user A cannot force user B to join a room, and trying to force this state change directly will fail.
-    #[serde(rename = "m.room.member")]
     Member {
         // third_party_invite: Invite
         membership: String, // ["invite", "join", "knock", "leave", "ban"]
@@ -160,7 +176,6 @@ enum EventContent {
     },
 
     /// This event specifies the minimum level a user must have in order to perform a certain action. It also specifies the levels of each user in the room.
-    #[serde(rename = "m.room.power_levels")]
     PowerLevels {
         events_default: u32,
         invite: u32,
@@ -177,7 +192,6 @@ enum EventContent {
     /// allowing admins to remove offensive or illegal content that may have been attached to any event. This cannot be undone, allowing server owners to
     /// physically delete the offending data. There is also a concept of a moderator hiding a message event, which can be undone, but cannot be applied to state events.
     /// The event that has been redacted is specified in the redacts event level key.
-    #[serde(rename = "m.room.redaction")]
     Redaction { reason: String },
 
     /// This event is used when sending messages in a room. Messages are not limited to be text.
@@ -185,25 +199,31 @@ enum EventContent {
     /// The body key is text and MUST be used with every kind of msgtype as a fallback mechanism for when
     /// a client cannot render a message. This allows clients to display something even if it is just plain text.
     /// For more information on msgtypes, see m.room.message msgtypes.
-    #[serde(rename = "m.room.message")]
     Message(MessageEventContent),
+
+    /// Informs the client of the list of users currently typing.
+    Typing { user_ids: Vec<String> },
 
     /// A room has an opaque room ID which is not human-friendly to read. A room alias is human-friendly,
     /// but not all rooms have room aliases. The room name is a human-friendly string designed to be displayed
     /// to the end-user. The room name is not unique, as multiple rooms can have the same room name set.
-    #[serde(rename = "m.room.name")]
     Name { name: String },
 
     /// A topic is a short message detailing what is currently being discussed in the room.
     /// It can also be used as a way to display extra information about the room, which may not be
     /// suitable for the room name. The room topic can also be set when creating a room using /createRoom
     /// with the topic key.
-    #[serde(rename = "m.room.topic")]
     Topic { topic: String },
 
     /// A picture that is associated with the room. This can be displayed alongside the room information.
-    #[serde(rename = "m.room.avatar")]
     Avatar { url: String }, // not all fields are taken
+
+    Other(Value),
+}
+
+#[derive(Serialize, Deserialize)]
+struct Tag {
+    order: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -225,7 +245,11 @@ enum MessageEventContent {
     /// m.notice messages. This helps to prevent infinite-loop situations where two automated clients continuously exchange
     /// messages, as each responds to the other.
     #[serde(rename = "m.notice")]
-    Notice { body: String },
+    Notice {
+        body: String,
+        format: Option<String>,
+        formatted_body: Option<String>,
+    },
 
     /// This message represents a single image and an optional thumbnail.
     #[serde(rename = "m.image")]
@@ -242,10 +266,10 @@ enum MessageEventContent {
     File {
         body: String,
         filename: String,
+        url: String,
         info: Option<FileInfo>,
         thumbnail_info: Option<ImageInfo>,
         thumbnail_url: Option<String>,
-        url: String,
     }, 
 
     // m.location, m.video, m.audio are not so interesting for us
@@ -310,7 +334,7 @@ pub fn process_updates(client: &Client,
     let sync_url = MATRIX_API_ENDPOINT.to_owned() + "/sync";
     let mut request_url = sync_url + "?access_token=" + token;
     if !last_batch.is_empty() {
-        request_url = request_url + "&sync=" + last_batch;
+        request_url = request_url + "&since=" + last_batch;
     }
 
     let mut response = client.get(&request_url)?.send()?;
@@ -334,67 +358,83 @@ pub fn process_updates(client: &Client,
 
     // process link/unlink requests
     if !response_body.rooms.join.is_empty() {
-        let mut all_updates: Vec<UpstreamUpdate> = vec![];
-        for room_events in response_body.rooms.join {
-            let all_commands = COMMANDS.iter().join("|");
-            let command_regex = Regex::new(&format!(r"({})\s+(\w+)\s+(\w+)", all_commands))
-                .expect("Must be valid regexp!");
-            let room_id = room_events.0;
-            let room_status = room_events.1.timeline;
-            let updates_of_this_room: Vec<UpstreamUpdate> = room_status.events
-                .iter() // command syntax is: /link LinuxOrgRu username
-                .filter_map(|event| { // check that message text corresponds to regex
-                    if let EventContent::Message(ref msg) = event.content {
-                        if let &MessageEventContent::Text { ref body } = msg {
-                            return command_regex
-                                .captures(body) // ... and return it with the sender name
-                                .map(|capture| (capture, &event.sender));
-                        }
-                    }
-                    None
-                })
-                .filter_map(|capture| {
-                    let user_name = capture.1;
-                    let groups = capture.0;
-                    let adapter = match &groups[1] {
-                        "LinuxOrgRu" => Adapter::LinuxOrgRu,
-                        _ => return None, // skip unknown adapters
-                    };
-
-                    Some(UpstreamUpdate::Link(UserInfo {  
-                        user_id: 0, 
-                        chat_id: room_id.to_owned(), 
-                        user_name: user_name.to_owned(), 
-                        linked_user_name: groups[2].to_owned(),
-                        connector_type: "Matrix".to_owned(),
-                        adapter: adapter,
-                        last_update: FixedOffset::east(0).timestamp(0, 0),
-                    }))
-                })
-                .collect();
-
-            all_updates.extend(updates_of_this_room);
-        }
-
-        return Ok(all_updates);
+        return capture_commands(response_body.rooms.join);
     }
 
     Ok(Vec::default())
 }
 
+fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<UpstreamUpdate>, CoreError> {
+    let mut all_updates: Vec<UpstreamUpdate> = vec![];
+    for room_events in all_rooms {
+        let room_id = room_events.0;
+        let room_status = room_events.1.timeline;
+        for event in room_status.events {
+            let msg = match event.content {
+                _ => continue,
+                EventContent::Message(msg) => msg,
+            };
+
+            let body = match msg {
+                _ => continue,
+                MessageEventContent::Text { body } => body,
+            };
+
+            if !body.starts_with("!") {
+                continue;
+            }
+            let arguments: Vec<&str> = body.trim_left_matches("!").split(" ").collect();
+            if arguments.is_empty() {
+                continue;
+            }
+
+            match arguments[0] {
+                "link" => {
+                    if arguments.len() < 3 {
+                        continue;
+                    }
+                    let adapter = Adapter::from_str(&arguments[1]);
+                    let linked_user_name = arguments[2];
+
+                    if adapter.is_none() {
+                        continue;
+                    }
+
+                    return Some(UpstreamUpdate::Link(UserInfo {
+                        user_id: 0,
+                        chat_id: room_id.to_owned(),
+                        user_name: event.sender.to_owned(),
+                        linked_user_name: linked_user_name.to_owned(),
+                        connector_type: "Matrix".to_owned(),
+                        adapter: adapter.unwrap(),
+                        last_update: FixedOffset::east(0).timestamp(0, 0),
+                    }));
+                }
+            }
+        }
+        all_updates.extend(updates_of_this_room);
+    }
+
+    return Ok(all_updates);
+}
+
 pub fn post_message(client: &Client,
                     access_token: &String,
                     chat_id: &String,
-                    text: String)
+                    update: Box<UpdateDesc>)
                     -> Result<String, CoreError> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
                        "?access_token=" + access_token;
 
-    let post_content = MessageEventContent::Notice { body: text };
+    let post_content = MessageEventContent::Notice {
+        body: update.as_string(),
+        format: Some("org.matrix.custom.html".to_owned()),
+        formatted_body: Some(update.as_html()),
+    };
     let body_json = serde_json::to_string(&post_content)?;
 
-    let mut response = client.post(&post_msg_url)?.body(body_json).send()?;
+    let mut response = client.put(&post_msg_url)?.body(body_json).send()?;
     let mut response_content = String::new();
     response.read_to_string(&mut response_content)?;
     if !response.status().is_success() {

@@ -6,7 +6,7 @@ use config::Config;
 
 use modules::*;
 
-pub const COMMANDS: [&'static str;3] = ["/link", "/unlink", "/clear_links"];
+pub const COMMANDS: [&'static str;4] = ["help", "link", "unlink", "unlinkall"];
 
 #[derive(Debug, Error)]
 pub enum CoreError {
@@ -38,16 +38,36 @@ pub enum Adapter {
     LinuxOrgRu,
 }
 
+impl Adapter {
+    pub fn from_str(s: &str) -> Option<Adapter> {
+        match s {
+            "LinuxOrgRu" => Some(Adapter::LinuxOrgRu),
+            _ => None,
+        }
+    }
+
+    pub fn to_str(&self) -> String {
+        match *self {
+            Adapter::LinuxOrgRu => "LinuxOrgRu".to_owned(),
+        }
+    }
+}
+
 pub enum MarkdownType {
     GitHub,
     Matrix,
     Telegram,
 }
 
+// command syntax is: 
+// /link LinuxOrgRu username
+// /unlink LinuxOrgRu username
+// /unlinkall username
 #[derive(Debug)]
 pub enum UpstreamUpdate {
     Link(UserInfo),
-    Unlink { user_name: String, linked_user_name: String, adapter: Adapter },
+    Unlink { user_name: String, linked_user_name: String },
+    UnlinkAll { user_name: String },
 }
 
 // User info struct, which provides a link between Connector and Adapter
@@ -55,13 +75,13 @@ pub enum UpstreamUpdate {
 // the application is running.
 #[derive(Debug, new)]
 pub struct UserInfo {
-    pub user_id: i64, // internal user ID as saved in DB, mostly not used
-    pub chat_id: String, // chat in which to post updates
-    pub user_name: String, // user name as provided by Connector
-    pub linked_user_name: String, // linked user name, as requested from Adapter
-    pub connector_type: String, // connector descriptor
-    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
-    pub last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
+    user_id: i64, // internal user ID as saved in DB, mostly not used
+    chat_id: String, // chat in which to post updates
+    user_name: String, // user name as provided by Connector
+    linked_user_name: String, // linked user name, as requested from Adapter
+    connector_type: String, // connector descriptor
+    adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
+    last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
 }
 
 
@@ -69,6 +89,7 @@ pub struct UserInfo {
 pub trait UpdateDesc {
     fn as_string(&self) -> String;
     fn as_markdown(&self, md_type: MarkdownType) -> String;
+    fn as_html(&self) -> String;
     fn timestamp(&self) -> DateTime<FixedOffset>;
 }
 
@@ -94,7 +115,7 @@ impl Connector {
     pub fn push(&self, client: &Client, user_info: &UserInfo, update: Box<UpdateDesc>) {
         match *self {
             Connector::Matrix {ref access_token, ..} => {
-                matrix_org::post_message(client, access_token, &user_info.chat_id, update.as_markdown(MarkdownType::Matrix));
+                matrix_org::post_message(client, access_token, &user_info.chat_id, update);
             }
         }
     }
@@ -119,7 +140,6 @@ impl Adapter {
 }
 
 impl UserInfo {
-    
     pub fn poll(&mut self, client: &Client) -> Vec<Box<UpdateDesc>> {
         let linked_user_name = self.linked_user_name.to_owned();
         let update_result = self.adapter.poll(client, vec![linked_user_name]);
@@ -155,5 +175,23 @@ impl UserInfo {
         self.last_update = current_latest_update;
 
         new_updates
+    }
+}
+
+pub fn parse_command(command: String) -> Option<UpstreamCommand> {
+
+    let adapter = Adapter::from_str(&regex_groups[2]);
+    let linked_user_name = &regex_groups[3];
+
+    if command == "!link" {
+        return Some(UpstreamUpdate::Link(UserInfo {
+            user_id: 0,
+            chat_id: room_id.to_owned(),
+            user_name: user_name.to_owned(),
+            linked_user_name: linked_user_name.to_owned(),
+            connector_type: "Matrix".to_owned(),
+            adapter: adapter,
+            last_update: FixedOffset::east(0).timestamp(0, 0),
+        }));
     }
 }
