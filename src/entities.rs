@@ -75,13 +75,13 @@ pub enum UpstreamUpdate {
 // the application is running.
 #[derive(Debug, new)]
 pub struct UserInfo {
-    user_id: i64, // internal user ID as saved in DB, mostly not used
-    chat_id: String, // chat in which to post updates
-    user_name: String, // user name as provided by Connector
-    linked_user_name: String, // linked user name, as requested from Adapter
-    connector_type: String, // connector descriptor
-    adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
-    last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
+    pub user_id: i64, // internal user ID as saved in DB, mostly not used
+    pub chat_id: String, // chat in which to post updates
+    pub user_name: String, // user name as provided by Connector
+    pub linked_user_name: String, // linked user name, as requested from Adapter
+    pub connector_type: String, // connector descriptor
+    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
+    pub last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
 }
 
 
@@ -175,23 +175,5 @@ impl UserInfo {
         self.last_update = current_latest_update;
 
         new_updates
-    }
-}
-
-pub fn parse_command(command: String) -> Option<UpstreamCommand> {
-
-    let adapter = Adapter::from_str(&regex_groups[2]);
-    let linked_user_name = &regex_groups[3];
-
-    if command == "!link" {
-        return Some(UpstreamUpdate::Link(UserInfo {
-            user_id: 0,
-            chat_id: room_id.to_owned(),
-            user_name: user_name.to_owned(),
-            linked_user_name: linked_user_name.to_owned(),
-            connector_type: "Matrix".to_owned(),
-            adapter: adapter,
-            last_update: FixedOffset::east(0).timestamp(0, 0),
-        }));
     }
 }

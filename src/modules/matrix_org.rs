@@ -364,58 +364,75 @@ pub fn process_updates(client: &Client,
     Ok(Vec::default())
 }
 
+/// Retrieves and parses commands from room updates
 fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<UpstreamUpdate>, CoreError> {
     let mut all_updates: Vec<UpstreamUpdate> = vec![];
     for room_events in all_rooms {
         let room_id = room_events.0;
         let room_status = room_events.1.timeline;
         for event in room_status.events {
-            let msg = match event.content {
+            let body = match event.content {
+                EventContent::Message(MessageEventContent::Text { body }) => body,
                 _ => continue,
-                EventContent::Message(msg) => msg,
             };
 
-            let body = match msg {
-                _ => continue,
-                MessageEventContent::Text { body } => body,
-            };
-
+            // we start Matrix commands with exclamation mark
+            // because slash is reserved with server communication
             if !body.starts_with("!") {
                 continue;
             }
+
             let arguments: Vec<&str> = body.trim_left_matches("!").split(" ").collect();
-            if arguments.is_empty() {
-                continue;
-            }
-
-            match arguments[0] {
-                "link" => {
-                    if arguments.len() < 3 {
-                        continue;
-                    }
-                    let adapter = Adapter::from_str(&arguments[1]);
-                    let linked_user_name = arguments[2];
-
-                    if adapter.is_none() {
-                        continue;
-                    }
-
-                    return Some(UpstreamUpdate::Link(UserInfo {
-                        user_id: 0,
-                        chat_id: room_id.to_owned(),
-                        user_name: event.sender.to_owned(),
-                        linked_user_name: linked_user_name.to_owned(),
-                        connector_type: "Matrix".to_owned(),
-                        adapter: adapter.unwrap(),
-                        last_update: FixedOffset::east(0).timestamp(0, 0),
-                    }));
-                }
+            match parse_command(room_id, event, arguments) {
+                Some(updates) => all_updates.push(updates),
+                None => warn!("Couldn't parse command: {}", body)
             }
         }
-        all_updates.extend(updates_of_this_room);
     }
 
     return Ok(all_updates);
+}
+
+fn parse_command(room_id: String, event: Event, arguments: Vec<&str>) -> Option<UpstreamUpdate> {
+    if arguments.is_empty() {
+        return None;
+    }
+
+    match arguments.remove(0) {
+        "link" => {
+            if arguments.len() < 2 {
+                return None;
+            }
+
+            let adapter = Adapter::from_str(&arguments[1]);
+            let linked_user_name = arguments[2];
+            if adapter.is_none() {
+                return None;
+            }
+
+            Some(UpstreamUpdate::Link(UserInfo {
+                user_id: 0,
+                chat_id: room_id.to_owned(),
+                user_name: event.sender.to_owned(),
+                linked_user_name: linked_user_name.to_owned(),
+                connector_type: "Matrix".to_owned(),
+                adapter: adapter.unwrap(),
+                last_update: FixedOffset::east(0).timestamp(0, 0),
+            }))
+        },
+        "unlink" => {
+            if arguments.len() < 2 {
+                return None;
+            }
+
+            let adapter = Adapter::from_str(&arguments[1]);
+            let linked_user_name = arguments[2];
+            if adapter.is_none() {
+                return None;
+            }
+        }
+        _ => None
+    }
 }
 
 pub fn post_message(client: &Client,
