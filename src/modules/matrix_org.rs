@@ -372,7 +372,7 @@ fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<Ups
         let room_status = room_events.1.timeline;
         for event in room_status.events {
             let body = match event.content {
-                EventContent::Message(MessageEventContent::Text { body }) => body,
+                EventContent::Message(MessageEventContent::Text { ref body }) => body.to_owned(),
                 _ => continue,
             };
 
@@ -383,9 +383,9 @@ fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<Ups
             }
 
             let arguments: Vec<&str> = body.trim_left_matches("!").split(" ").collect();
-            match parse_command(room_id, event, arguments) {
-                Some(updates) => all_updates.push(updates),
-                None => warn!("Couldn't parse command: {}", body)
+            match parse_command(&room_id, event, arguments) {
+                Some(update) => all_updates.push(update),
+                None => warn!("Couldn't parse command: {}", body),
             }
         }
     }
@@ -393,45 +393,39 @@ fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<Ups
     return Ok(all_updates);
 }
 
-fn parse_command(room_id: String, event: Event, arguments: Vec<&str>) -> Option<UpstreamUpdate> {
+/// parse command and build upstream update entity from it if command is valid
+fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Option<UpstreamUpdate> {
     if arguments.is_empty() {
         return None;
     }
 
-    match arguments.remove(0) {
-        "link" => {
-            if arguments.len() < 2 {
-                return None;
-            }
-
-            let adapter = Adapter::from_str(&arguments[1]);
-            let linked_user_name = arguments[2];
-            if adapter.is_none() {
-                return None;
-            }
-
-            Some(UpstreamUpdate::Link(UserInfo {
-                user_id: 0,
-                chat_id: room_id.to_owned(),
-                user_name: event.sender.to_owned(),
-                linked_user_name: linked_user_name.to_owned(),
-                connector_type: "Matrix".to_owned(),
-                adapter: adapter.unwrap(),
-                last_update: FixedOffset::east(0).timestamp(0, 0),
-            }))
-        },
-        "unlink" => {
-            if arguments.len() < 2 {
-                return None;
-            }
-
-            let adapter = Adapter::from_str(&arguments[1]);
-            let linked_user_name = arguments[2];
-            if adapter.is_none() {
-                return None;
-            }
+    let info_from_event = |event: Event, args: &Vec<&str>| {
+        if args.len() < 2 {
+            return None;
         }
-        _ => None
+
+        let adapter = Adapter::from_str(&args[1]);
+        let linked_user_name = args[2];
+        if adapter.is_none() {
+            return None;
+        }
+
+        Some(UserInfo {
+            user_id: 0,
+            chat_id: room_id.to_owned(),
+            user_name: event.sender.to_owned(),
+            linked_user_name: linked_user_name.to_owned(),
+            upstream_type: "Matrix".to_owned(),
+            adapter: adapter.unwrap(),
+            last_update: FixedOffset::east(0).timestamp(0, 0),
+        })
+    };
+
+    match arguments.remove(0) {
+        "link" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Link(info)),
+        "unlink" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Unlink(info)),
+        "unlinkall" => Some(UpstreamUpdate::UnlinkAll { upstream_type: "Matrix".to_owned(), user_name: event.sender }),
+        _ => None,
     }
 }
 

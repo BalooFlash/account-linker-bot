@@ -51,7 +51,7 @@ struct GlobalData {
     conn: SqliteConnection,
     config: Config,
     http_client: Client,
-    connects: HashMap<String, Connector>,
+    connects: HashMap<String, Upstream>,
     requests: Vec<UserInfo>,
 }
 
@@ -87,7 +87,7 @@ fn main() {
 
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
     app_data.connects.insert("Matrix".to_owned(),
-                             Connector::Matrix {
+                             Upstream::Matrix {
                                  access_token: String::default(),
                                  last_batch: String::default(),
                              });
@@ -113,17 +113,17 @@ fn start_event_loop(mut data: GlobalData) {
             for d in demands {
                 match d {
                     Link(new_user_info) => data.requests.push(new_user_info),
-                    Unlink { .. } => {},
+                    Unlink(user_info) => data.requests.retain(|i| i == &user_info),
                     UnlinkAll { .. } => {},
                 }
             }
         }
 
         for user_info in data.requests.iter_mut() {
-            let connector = data.connects.get(&user_info.connector_type).expect("Must be known connector type!");
+            let upstream = data.connects.get(&user_info.upstream_type).expect("Must be known upstream type!");
             let updates = user_info.poll(&data.http_client);
             for update in updates {
-                connector.push(client, user_info, update);
+                upstream.push(client, user_info, update);
             }
         }
 
