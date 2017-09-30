@@ -32,7 +32,7 @@ pub enum Upstream {
 }
 
 // Where do we retrieve updates from
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Adapter {
     #[cfg(feature = "linux-org-ru")]
     LinuxOrgRu,
@@ -90,9 +90,10 @@ pub struct UserInfo {
 }
 
 impl PartialEq for UserInfo {
-
     fn eq(&self, rhs: &UserInfo) -> bool {
-        true
+        self.user_id == rhs.user_id && self.chat_id == rhs.chat_id && self.user_name == rhs.user_name &&
+        self.linked_user_name == rhs.linked_user_name && self.upstream_type == rhs.upstream_type &&
+        self.adapter == rhs.adapter
     }
 }
 
