@@ -1,6 +1,6 @@
 extern crate chrono;
 
-use self::chrono::prelude::*;
+use chrono::prelude::*;
 use entities::UpdateDesc;
 use entities::MarkdownType;
 
@@ -12,7 +12,7 @@ pub mod matrix_org;
 pub struct UserComment {
     user_name: String,
     post_title: String,
-    comment_date: DateTime<FixedOffset>,
+    comment_date: NaiveDateTime,
     comment_text: String,
 }
 
@@ -20,7 +20,7 @@ impl UpdateDesc for UserComment {
     fn as_string(&self) -> String {
         format!(
             "{}: {} added comment to post {}:\n\t'{}'",
-            self.comment_date.to_rfc3339(),
+            self.comment_date,
             self.post_title,
             self.user_name,
             self.comment_text
@@ -35,7 +35,7 @@ impl UpdateDesc for UserComment {
         self.as_string()
     }
 
-    fn timestamp(&self) -> DateTime<FixedOffset> {
+    fn timestamp(&self) -> NaiveDateTime {
         self.comment_date
     }
 }

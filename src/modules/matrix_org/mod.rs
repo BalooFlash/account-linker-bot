@@ -113,20 +113,20 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
             return None;
         }
 
-        let adapter = Adapter::from_str(&args[0]);
-        let linked_user_name = args[1];
-        if adapter.is_none() {
+        let adapter: Result<Adapter> = str::parse(&args[0]);
+        let linked_user_id = args[1];
+        if adapter.is_err() {
             return None;
         }
 
         Some(UserInfo {
-            user_id: 0,
-            chat_id: room_id.to_owned(),
-            user_name: event.sender.to_owned(),
-            linked_user_name: linked_user_name.to_owned(),
+            id: 0,
             upstream_type: "Matrix".to_owned(),
+            chat_id: room_id.to_owned(),
+            user_id: event.sender.to_owned(),
             adapter: adapter.unwrap(),
-            last_update: FixedOffset::east(0).timestamp(0, 0),
+            linked_user_id: linked_user_id.to_owned(),
+            last_update: NaiveDateTime::from_timestamp(0, 0),
         })
     };
 

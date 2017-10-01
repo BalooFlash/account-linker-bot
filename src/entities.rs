@@ -1,9 +1,14 @@
 use std::error::Error;
 use std::result;
+use std::str::FromStr;
 
 use chrono::prelude::*;
 use reqwest::Client;
 use config::Config;
+
+use diesel::Expression;
+use diesel::types::Text;
+use database::schema::user_info;
 
 use modules::*;
 
@@ -11,13 +16,13 @@ pub type Result<T> = result::Result<T, CoreError>;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
-    // Error retrieving LOR HTML page
+    /// Error retrieving LOR HTML page
     HttpError(::reqwest::Error),
-    // Error converting response to string
+    /// Error converting response to string
     ConvertError(::std::io::Error),
-    // Error (de) serializing data
+    /// Error (de) serializing data
     JsonSerializeError(::serde_json::Error),
-    // Our own error
+    /// Our own error
     #[error(msg_embedded, non_std, no_from)]
     CustomError(String),
 }
@@ -39,17 +44,42 @@ pub enum Adapter {
     LinuxOrgRu,
 }
 
-impl Adapter {
-    pub fn from_str(s: &str) -> Option<Adapter> {
+impl FromStr for Adapter {
+
+    type Err = CoreError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s {
-            "LinuxOrgRu" => Some(Adapter::LinuxOrgRu),
-            _ => None,
+            "LinuxOrgRu" => Ok(Adapter::LinuxOrgRu),
+            _ => Err(CoreError::CustomError("No such adapter!".to_owned())),
         }
     }
+}
 
-    pub fn to_str(&self) -> String {
+impl ToString for Adapter {
+
+    fn to_string(&self) -> String {
         match *self {
             Adapter::LinuxOrgRu => "LinuxOrgRu".to_owned(),
+        }
+    }
+}
+
+impl Expression for Adapter {
+    type SqlType = Text;
+}
+
+impl Adapter {
+    pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>> {
+        match *self {
+            Adapter::LinuxOrgRu => {
+                let user_name = specifiers.into_iter().next().unwrap();
+                return lor_ru::get_user_posts(&user_name, client).map(|comments| {
+                    comments.into_iter()
+                        .map(|c| Box::new(c) as Box<UpdateDesc>)
+                        .collect()
+                });
+            }
         }
     }
 }
@@ -60,10 +90,12 @@ pub enum MarkdownType {
     Telegram,
 }
 
-// command syntax is:
-// /link LinuxOrgRu username
-// /unlink LinuxOrgRu username
-// /unlinkall username
+/// command syntax is:
+/// ```
+/// /link LinuxOrgRu username
+/// /unlink LinuxOrgRu username
+/// /unlinkall username
+/// ```
 #[derive(Debug)]
 pub enum UpstreamUpdate {
     Link(UserInfo),
@@ -76,24 +108,33 @@ pub enum UpstreamUpdate {
     },
 }
 
-// User info struct, which provides a link between Connector and Adapter
-// UserInfo struct instances are meant to be alive almost the same amount of time
-// the application is running.
-#[derive(Debug, Hash, Eq)]
+/// User info struct, which provides a link between Connector and Adapter
+/// UserInfo struct instances are meant to be alive almost the same amount of time
+/// the application is running.
+#[derive(Debug, Hash, Eq, Queryable, Insertable)]
+#[table_name = "user_info"]
 pub struct UserInfo {
-    pub user_id: i64, // internal user ID as saved in DB, mostly not used
-    pub chat_id: String, // chat in which to post updates
-    pub user_name: String, // user name as provided by Upstream
-    pub linked_user_name: String, // linked user name, as requested from Adapter
-    pub upstream_type: String, // upstream descriptor
-    pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
-    pub last_update: DateTime<FixedOffset>, // Last time update was queried for this instance
+    /// internal id as saved in DB, mostly not used
+    pub id: i32,
+    /// upstream itself
+    pub upstream_type: String,
+    /// chat in which to post updates
+    pub chat_id: String,
+    /// user id/name as provided by Upstream
+    pub user_id: String,
+    /// Adapter itself, most of the time it's in `connected` state
+    pub adapter: Adapter,
+    /// linked user name, as requested from Adapter
+    pub linked_user_id: String,
+    /// Last time update was queried for this instance
+    pub last_update: NaiveDateTime,
 }
 
 impl PartialEq for UserInfo {
+    /// We don't compare internal ids
     fn eq(&self, rhs: &UserInfo) -> bool {
-        self.user_id == rhs.user_id && self.chat_id == rhs.chat_id && self.user_name == rhs.user_name &&
-        self.linked_user_name == rhs.linked_user_name && self.upstream_type == rhs.upstream_type &&
+        self.chat_id == rhs.chat_id && self.user_id == rhs.user_id &&
+        self.linked_user_id == rhs.linked_user_id && self.upstream_type == rhs.upstream_type &&
         self.adapter == rhs.adapter
     }
 }
@@ -104,7 +145,7 @@ pub trait UpdateDesc {
     fn as_string(&self) -> String;
     fn as_markdown(&self, md_type: MarkdownType) -> String;
     fn as_html(&self) -> String;
-    fn timestamp(&self) -> DateTime<FixedOffset>;
+    fn timestamp(&self) -> NaiveDateTime;
 }
 
 impl Upstream {
@@ -142,8 +183,8 @@ impl Upstream {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
                 let message = format!("{}: Link to {} is already present!",
-                                      link.user_name,
-                                      link.linked_user_name);
+                                      link.user_id,
+                                      link.linked_user_id);
                 let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
                 match result {
                     Ok(event_id) => info!("Message posted with event id {}", event_id),
@@ -157,8 +198,8 @@ impl Upstream {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
                 let message = format!("{}: Link to {} created!",
-                                      link.user_name,
-                                      link.linked_user_name);
+                                      link.user_id,
+                                      link.linked_user_id);
                 let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
                 match result {
                     Ok(event_id) => info!("Message posted with event id {}", event_id),
@@ -169,24 +210,9 @@ impl Upstream {
     }
 }
 
-impl Adapter {
-    pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>> {
-        match *self {
-            Adapter::LinuxOrgRu => {
-                let user_name = specifiers.into_iter().next().unwrap();
-                return lor_ru::get_user_posts(&user_name, client).map(|comments| {
-                    comments.into_iter()
-                        .map(|c| Box::new(c) as Box<UpdateDesc>)
-                        .collect()
-                });
-            }
-        }
-    }
-}
-
 impl UserInfo {
     pub fn poll(&mut self, client: &Client) -> Vec<Box<UpdateDesc>> {
-        let linked_user_name = self.linked_user_name.to_owned();
+        let linked_user_name = self.linked_user_id.to_owned();
         let update_result = self.adapter.poll(client, vec![linked_user_name]);
         let updates = match update_result {
             Err(error) => {
@@ -195,7 +221,7 @@ impl UserInfo {
             }
             Ok(updates) => {
                 if updates.is_empty() {
-                    info!("Nothing found for {}...", self.linked_user_name);
+                    info!("Nothing found for {}...", self.linked_user_id);
                     return Vec::default();
                 }
                 updates
@@ -203,7 +229,7 @@ impl UserInfo {
         };
         let current_latest_update = updates.iter().map(|u| u.timestamp()).max().unwrap();
         if self.last_update == current_latest_update {
-            info!("No updates for {}...", self.linked_user_name);
+            info!("No updates for {}...", self.linked_user_id);
             return Vec::default();
         }
 
@@ -223,4 +249,34 @@ impl UserInfo {
 
         new_updates
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use diesel::sqlite::*;
+    use diesel::prelude::*;
+    use diesel;
+    use entities::*;
+    use chrono::prelude::*;
+    use database::schema::user_info;
+
+    #[test]
+    fn test_insert() {
+        let sample = UserInfo {
+            id: 0,
+            upstream_type: "Matrix".to_owned(),
+            chat_id: "chat0".to_owned(),
+            user_id: "user0".to_owned(),
+            adapter: Adapter::LinuxOrgRu,
+            linked_user_id: "user1".to_owned(),
+            last_update: NaiveDateTime::from_timestamp(0, 0),
+        };
+        let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
+
+        diesel::insert(&sample).into(user_info::table)
+            .get_result(conn)
+            .expect("Error saving new post");
+
+    }
+
 }

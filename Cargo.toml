@@ -5,7 +5,7 @@ authors = ["Kanedias <kanedias@xaker.ru>"]
 
 [dependencies]
 # db
-diesel = { version = "0.15.0", features = ["sqlite"] }
+diesel = { version = "0.15.0", features = ["sqlite", "chrono"] }
 diesel_codegen = { version = "0.15.0", features = ["sqlite"] }
 # logging
 log = "0.3"             # log facade
@@ -25,7 +25,8 @@ chrono = { version = "0.4", features = ["serde", "rustc-serialize"] }
 derive-new = "0.5"      # generate ::new
 derive-error = "0.0.3"  # generate From for Errors
 crossbeam = "0.3.0"     # scoped thread spawning
-itertools = "0.6.2"
+custom_derive = "0.1.7"
+enum_derive = "0.1.7"
 regex = "0.2"
 uuid = { version = "0.4", features = ["serde", "v4"] }
 

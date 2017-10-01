@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate diesel;
+#[macro_use]
+extern crate diesel_codegen;
 
 #[macro_use]
 extern crate log;
@@ -21,7 +23,6 @@ extern crate derive_new;
 extern crate derive_error;
 extern crate crossbeam;
 extern crate chrono;
-extern crate itertools;
 extern crate regex;
 extern crate uuid;
 
@@ -29,7 +30,6 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
 use reqwest::Client;
-use chrono::prelude::*;
 
 use config::Config;
 use config::File;
@@ -39,8 +39,8 @@ use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::collections::HashMap;
-use std::collections::HashSet;
 
+pub mod database;
 mod entities;
 mod modules;
 
@@ -123,7 +123,7 @@ fn start_event_loop(mut data: GlobalData) {
                         data.requests.push(new_user_info);
                     },
                     Unlink(user_info) => data.requests.retain(|i| i != &user_info),
-                    UnlinkAll { user_name, upstream_type } => data.requests.retain(|i| i.user_name == user_name && i.upstream_type == upstream_type),
+                    UnlinkAll { user_name, upstream_type } => data.requests.retain(|i| i.user_id == user_name && i.upstream_type == upstream_type),
                 }
             }
         }
