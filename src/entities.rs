@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::result;
 
 use chrono::prelude::*;
 use reqwest::Client;
@@ -6,7 +7,7 @@ use config::Config;
 
 use modules::*;
 
-pub const COMMANDS: [&'static str; 4] = ["help", "link", "unlink", "unlinkall"];
+pub type Result<T> = result::Result<T, CoreError>;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
@@ -32,7 +33,7 @@ pub enum Upstream {
 }
 
 // Where do we retrieve updates from
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Hash, Eq)]
 pub enum Adapter {
     #[cfg(feature = "linux-org-ru")]
     LinuxOrgRu,
@@ -78,11 +79,11 @@ pub enum UpstreamUpdate {
 // User info struct, which provides a link between Connector and Adapter
 // UserInfo struct instances are meant to be alive almost the same amount of time
 // the application is running.
-#[derive(Debug, new)]
+#[derive(Debug, Hash, Eq)]
 pub struct UserInfo {
     pub user_id: i64, // internal user ID as saved in DB, mostly not used
     pub chat_id: String, // chat in which to post updates
-    pub user_name: String, // user name as provided by Connector
+    pub user_name: String, // user name as provided by Upstream
     pub linked_user_name: String, // linked user name, as requested from Adapter
     pub upstream_type: String, // upstream descriptor
     pub adapter: Adapter, // Adapter itself, most of the time it's in `connected` state
@@ -117,7 +118,7 @@ impl Upstream {
         };
     }
 
-    pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>, CoreError> {
+    pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
         match *self {
             Upstream::Matrix { ref access_token, ref mut last_batch } => {
                 matrix_org::process_updates(client, access_token, last_batch)
@@ -125,17 +126,51 @@ impl Upstream {
         }
     }
 
-    pub fn push(&self, client: &Client, user_info: &UserInfo, update: Box<UpdateDesc>) {
+    pub fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
-                matrix_org::post_message(client, access_token, &user_info.chat_id, update);
+                let result = matrix_org::post_update(client, access_token, chat_id, update);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+
+    pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let message = format!("{}: Link to {} is already present!",
+                                      link.user_name,
+                                      link.linked_user_name);
+                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+
+    pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let message = format!("{}: Link to {} created!",
+                                      link.user_name,
+                                      link.linked_user_name);
+                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
             }
         }
     }
 }
 
 impl Adapter {
-    pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>, CoreError> {
+    pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>> {
         match *self {
             Adapter::LinuxOrgRu => {
                 let user_name = specifiers.into_iter().next().unwrap();

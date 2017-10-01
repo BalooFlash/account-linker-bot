@@ -39,6 +39,7 @@ use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 mod entities;
 mod modules;
@@ -76,7 +77,7 @@ fn main() {
     cfg.merge(File::with_name("conf/bot-config.yml")).expect("Must be able to parse config in conf/bot-config.yml");
 
     // retrieve list of bindings from database
-    let mut user_infos = vec![];
+    let user_infos = vec![];
     /*user_infos.push(UserInfo::new(0,
                                   "0".to_owned(),
                                   "Kanedias@matrix.org".to_owned(),
@@ -112,9 +113,17 @@ fn start_event_loop(mut data: GlobalData) {
 
             for d in demands {
                 match d {
-                    Link(new_user_info) => data.requests.push(new_user_info),
-                    Unlink(user_info) => data.requests.retain(|i| i == &user_info),
-                    UnlinkAll { .. } => {},
+                    Link(new_user_info) => {
+                        if data.requests.contains(&new_user_info) {
+                            // this request was already present, report it
+                            upstream.report_duplicate_link(client, new_user_info);
+                            continue;
+                        }
+                        upstream.report_added_link(client, &new_user_info);
+                        data.requests.push(new_user_info);
+                    },
+                    Unlink(user_info) => data.requests.retain(|i| i != &user_info),
+                    UnlinkAll { user_name, upstream_type } => data.requests.retain(|i| i.user_name == user_name && i.upstream_type == upstream_type),
                 }
             }
         }
@@ -123,7 +132,7 @@ fn start_event_loop(mut data: GlobalData) {
             let upstream = data.connects.get(&user_info.upstream_type).expect("Must be known upstream type!");
             let updates = user_info.poll(&data.http_client);
             for update in updates {
-                upstream.push(client, user_info, update);
+                upstream.push_update(client, &user_info.chat_id, update);
             }
         }
 

@@ -1,4 +1,3 @@
-use std::result::Result;
 use std::vec::Vec;
 use std::io::Read;
 
@@ -9,9 +8,7 @@ use select::predicate::{Predicate, Attr, Class, Name};
 use chrono::prelude::*;
 
 use modules::UserComment;
-use entities::CoreError;
-use entities::UpdateDesc;
-use entities::MarkdownType;
+use entities::*;
 
 const LOR_URL: &'static str = "https://www.linux.org.ru/";
 
@@ -56,7 +53,7 @@ impl UpdateDesc for LorComment {
     }
 }
 
-pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComment>, CoreError> {
+pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComment>> {
     let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &user_name;
     let mut body = String::new();
     let mut response = client.get(&url)?.send()?;

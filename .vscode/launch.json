@@ -6,7 +6,10 @@
             "type": "lldb",
             "request": "launch",
             "program": "target/debug/account_linker_bot",
-            "cwd": "${workspaceRoot}"
+            "cwd": "${workspaceRoot}",
+            "env": {
+                "RUST_BACKTRACE": 1
+            }
         }
     ]
 }

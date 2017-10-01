@@ -3,12 +3,10 @@ use reqwest::Client;
 use config::Config;
 
 use serde_json;
-use itertools::Itertools;
 use chrono::prelude::*;
 use uuid::Uuid;
 
 use std::io::Read;
-use std::result::Result;
 use std::collections::HashMap;
 
 mod matrix_api;
@@ -18,7 +16,7 @@ use self::matrix_api::*;
 
 const MATRIX_API_ENDPOINT: &'static str = "https://matrix.org/_matrix/client/r0";
 
-pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
+pub fn connect(client: &Client, conf: &Config) -> Result<String> {
     let login = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
     let password = conf.get_str("matrix.password").expect("matrix.password property must be supplied in config");
     let post_body = Login {
@@ -40,10 +38,7 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String, CoreError> {
     Ok(response_body.access_token)
 }
 
-pub fn process_updates(client: &Client,
-                       token: &String,
-                       last_batch: &mut String)
-                       -> Result<Vec<UpstreamUpdate>, CoreError> {
+pub fn process_updates(client: &Client, token: &String, last_batch: &mut String) -> Result<Vec<UpstreamUpdate>> {
     // sync is the main routine in matrix.org lifecycle
     let sync_url = MATRIX_API_ENDPOINT.to_owned() + "/sync";
     let mut request_url = sync_url + "?access_token=" + token;
@@ -79,7 +74,7 @@ pub fn process_updates(client: &Client,
 }
 
 /// Retrieves and parses commands from room updates
-fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<UpstreamUpdate>, CoreError> {
+fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<UpstreamUpdate>> {
     let mut all_updates: Vec<UpstreamUpdate> = vec![];
     for room_events in all_rooms {
         let room_id = room_events.0;
@@ -118,8 +113,8 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
             return None;
         }
 
-        let adapter = Adapter::from_str(&args[1]);
-        let linked_user_name = args[2];
+        let adapter = Adapter::from_str(&args[0]);
+        let linked_user_name = args[1];
         if adapter.is_none() {
             return None;
         }
@@ -138,16 +133,18 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
     match arguments.remove(0) {
         "link" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Link(info)),
         "unlink" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Unlink(info)),
-        "unlinkall" => Some(UpstreamUpdate::UnlinkAll { upstream_type: "Matrix".to_owned(), user_name: event.sender }),
+        "unlinkall" => {
+            Some(UpstreamUpdate::UnlinkAll {
+                upstream_type: "Matrix".to_owned(),
+                user_name: event.sender,
+            })
+        }
+
         _ => None,
     }
 }
 
-pub fn post_message(client: &Client,
-                    access_token: &String,
-                    chat_id: &String,
-                    update: Box<UpdateDesc>)
-                    -> Result<String, CoreError> {
+pub fn post_update(client: &Client, access_token: &String, chat_id: &str, update: Box<UpdateDesc>) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
                        "?access_token=" + access_token;
@@ -168,7 +165,31 @@ pub fn post_message(client: &Client,
 
     let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
     let event_id = response_body.remove("event_id")
-        .expect("Answer must contain event id in case of successful response");
+        .expect("Answer must contain event id in case of success");
+    Ok(event_id)
+}
+
+pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &String, message: String) -> Result<String> {
+    let uuid = Uuid::new_v4().hyphenated().to_string();
+    let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
+                       "?access_token=" + access_token;
+    let post_content = MessageEventContent::Notice {
+        body: message,
+        format: None,
+        formatted_body: None,
+    };
+    let body_json = serde_json::to_string(&post_content)?;
+
+    let mut response = client.put(&post_msg_url)?.body(body_json).send()?;
+    let mut response_content = String::new();
+    response.read_to_string(&mut response_content)?;
+    if !response.status().is_success() {
+        return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
+    }
+
+    let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
+    let event_id = response_body.remove("event_id")
+        .expect("Answer must contain event id in case of success");
     Ok(event_id)
 }
 

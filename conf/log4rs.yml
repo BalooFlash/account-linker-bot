@@ -4,6 +4,16 @@ appenders:
   stdout:
     kind: console
 
+loggers:
+  html5ever:
+    level: info
+  tokio_core:
+    level: info
+  tokio_proto:
+    level: info
+  hyper:
+    level: info
+
 root:
   level: debug
   appenders:
