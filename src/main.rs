@@ -78,13 +78,6 @@ fn main() {
 
     // retrieve list of bindings from database
     let user_infos = vec![];
-    /*user_infos.push(UserInfo::new(0,
-                                  "0".to_owned(),
-                                  "Kanedias@matrix.org".to_owned(),
-                                  "Adonai".to_owned(),
-                                  "Matrix".to_owned(),
-                                  Adapter::LinuxOrgRu,
-                                  FixedOffset::east(0).timestamp(0, 0)));*/
 
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
     app_data.connects.insert("Matrix".to_owned(),

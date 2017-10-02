@@ -274,7 +274,7 @@ mod tests {
         let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
 
         diesel::insert(&sample).into(user_info::table)
-            .get_result(conn)
+            .execute(conn)
             .expect("Error saving new post");
 
     }
