@@ -6,7 +6,6 @@ use serde_json;
 use chrono::prelude::*;
 use uuid::Uuid;
 
-use std::io::Read;
 use std::collections::HashMap;
 
 mod matrix_api;
@@ -27,14 +26,12 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String> {
 
     let login_url = MATRIX_API_ENDPOINT.to_owned() + "/login";
     let body_json = serde_json::to_string(&post_body)?;
-    let mut response = client.post(&login_url)?.body(body_json).send()?;
+    let response = client.post(&login_url)?.body(body_json).send()?;
     if !response.status().is_success() {
         return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
-    let mut response_json = String::new();
-    response.read_to_string(&mut response_json)?;
-    let response_body: LoginAnswer = serde_json::from_str(&response_json)?;
+    let response_body: LoginAnswer = serde_json::from_reader(response)?;
     Ok(response_body.access_token)
 }
 
@@ -46,15 +43,13 @@ pub fn process_updates(client: &Client, token: &String, last_batch: &mut String)
         request_url = request_url + "&since=" + last_batch;
     }
 
-    let mut response = client.get(&request_url)?.send()?;
+    let response = client.get(&request_url)?.send()?;
     if !response.status().is_success() {
         return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
     // receive sync object - events, invites etc
-    let mut response_content = String::new();
-    response.read_to_string(&mut response_content)?;
-    let response_body: SyncAnswer = serde_json::from_str(&response_content)?;
+    let response_body: SyncAnswer = serde_json::from_reader(response)?;
     *last_batch = response_body.next_batch;
 
     // process invites
@@ -156,17 +151,31 @@ pub fn post_update(client: &Client, access_token: &String, chat_id: &str, update
     };
     let body_json = serde_json::to_string(&post_content)?;
 
-    let mut response = client.put(&post_msg_url)?.body(body_json).send()?;
-    let mut response_content = String::new();
-    response.read_to_string(&mut response_content)?;
+    let response = client.put(&post_msg_url)?.body(body_json).send()?;
     if !response.status().is_success() {
         return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
-    let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
+    let mut response_body: HashMap<String, String> = serde_json::from_reader(response)?;
     let event_id = response_body.remove("event_id")
         .expect("Answer must contain event id in case of success");
     Ok(event_id)
+}
+
+/// Get user display name given we know their user name slug
+/// Auth not required.
+pub fn get_display_name(client: &Client, user_name: &str) -> Result<String> {
+    let get_url = MATRIX_API_ENDPOINT.to_owned() + "/profile/" + user_name + "/displayname";
+
+    let response = client.get(&get_url)?.send()?;
+    if !response.status().is_success() {
+        return Err(CoreError::CustomError(format!("Matrix returned invalid code: {}", response.status())));
+    }
+
+    // receive sync object - events, invites etc
+    let mut response_body: HashMap<String, String> = serde_json::from_reader(response)?;
+    let display_name = response_body.remove("displayname").expect("Answer mustcontain displayname in case of success");
+    Ok(display_name)
 }
 
 pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &String, message: String) -> Result<String> {
@@ -180,14 +189,12 @@ pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &Stri
     };
     let body_json = serde_json::to_string(&post_content)?;
 
-    let mut response = client.put(&post_msg_url)?.body(body_json).send()?;
-    let mut response_content = String::new();
-    response.read_to_string(&mut response_content)?;
+    let response = client.put(&post_msg_url)?.body(body_json).send()?;
     if !response.status().is_success() {
         return Err(CoreError::CustomError(format!("Connect returned invalid code: {}", response.status())));
     }
 
-    let mut response_body: HashMap<String, String> = serde_json::from_str(&response_content)?;
+    let mut response_body: HashMap<String, String> = serde_json::from_reader(response)?;
     let event_id = response_body.remove("event_id")
         .expect("Answer must contain event id in case of success");
     Ok(event_id)
@@ -206,9 +213,7 @@ mod tests {
     #[test]
     fn test_deserialize() {
         let mut file = File::open("tests/bot-response.json").expect("File must be present!");
-        let mut get_body = String::new();
-        file.read_to_string(&mut get_body).expect("File must be present!");
-        let response_body: SyncAnswer = serde_json::from_str(&get_body).expect("File must be deserializable!");
+        let response_body: SyncAnswer = serde_json::from_reader(file).expect("File must be deserializable!");
     }
 
 }
