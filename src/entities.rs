@@ -196,9 +196,8 @@ impl Upstream {
     pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
-                let message = format!("{}: Link to {} is already present!",
-                                      link.user_id,
-                                      link.linked_user_id);
+                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+                let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
                 let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
                 match result {
                     Ok(event_id) => info!("Message posted with event id {}", event_id),
@@ -211,7 +210,8 @@ impl Upstream {
     pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
-                let message = format!("{}: Link to {} created!", link.user_id, link.linked_user_id);
+                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+                let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
                 let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
                 match result {
                     Ok(event_id) => info!("Message posted with event id {}", event_id),

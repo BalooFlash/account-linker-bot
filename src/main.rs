@@ -23,11 +23,13 @@ extern crate derive_new;
 extern crate derive_error;
 extern crate crossbeam;
 extern crate chrono;
-extern crate regex;
 extern crate uuid;
+#[macro_use]
+extern crate lazy_static;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
+use database::schema::user_info;
 
 use reqwest::Client;
 
@@ -39,6 +41,8 @@ use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 pub mod database;
 mod entities;
@@ -46,6 +50,17 @@ mod modules;
 
 use entities::*;
 use entities::UpstreamUpdate::*;
+
+lazy_static! {
+    static ref CONN: Arc<Mutex<SqliteConnection>> = {
+        if !Path::new("data").exists() {
+            debug!("Creating data dir for configs in cwd");
+            create_dir("data").expect("Must be able to create data dir!");
+        }
+        let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
+        Arc::new(Mutex::new(conn))
+    };
+}
 
 #[derive(new)]
 struct GlobalData {
@@ -112,6 +127,7 @@ fn start_event_loop(mut data: GlobalData) {
                             upstream.report_duplicate_link(client, new_user_info);
                             continue;
                         }
+                        diesel::insert(&new_user_info).into(user_info::table).execute(&data.conn).expect("Error saving new user info!");
                         upstream.report_added_link(client, &new_user_info);
                         data.requests.push(new_user_info);
                     }
