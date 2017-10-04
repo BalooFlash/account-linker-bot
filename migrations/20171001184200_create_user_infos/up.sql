@@ -6,7 +6,8 @@ create table user_info (
     user_id text not null,
     adapter text not null,
     linked_user_id text not null,
-    last_update datetime not null
+    last_update datetime not null,
+    verified boolean not null default 1
 );
 
 create index user_info_by_upstream on user_info(upstream_type);

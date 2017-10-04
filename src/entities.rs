@@ -19,6 +19,8 @@ use modules::*;
 
 pub type Result<T> = result::Result<T, CoreError>;
 
+const CHALLENGE: &'static str = "I love lor-bot!";
+
 #[derive(Debug, Error)]
 pub enum CoreError {
     /// Error retrieving LOR HTML page
@@ -32,9 +34,41 @@ pub enum CoreError {
     CustomError(String),
 }
 
+pub enum MarkdownType {
+    GitHub,
+    Matrix,
+    Telegram,
+}
 
-// Where do we request updates to be sent to
-// and from where do we connect to link accounts
+/// command syntax is:
+/// ```
+/// /link LinuxOrgRu username
+/// /unlink LinuxOrgRu username
+/// /unlinkall username
+/// ```
+#[derive(Debug)]
+pub enum UpstreamUpdate {
+    Link(UserInfo),
+    Unlink(UserInfo),
+    UnlinkAll {
+        /// From which upstream does this request come from
+        upstream_type: String,
+        /// Which user to process unlink for
+        user_name: String,
+    },
+}
+
+/// Update description
+pub trait UpdateDesc {
+    fn as_string(&self) -> String;
+    fn as_markdown(&self, md_type: MarkdownType) -> String;
+    fn as_html(&self) -> String;
+    fn timestamp(&self) -> NaiveDateTime;
+}
+
+
+/// Where do we request updates to be sent to
+/// and from where do we connect to link accounts
 pub enum Upstream {
     Matrix {
         access_token: String,
@@ -42,8 +76,82 @@ pub enum Upstream {
     },
 }
 
+impl Upstream {
+    pub fn connect(&mut self, client: &Client, cfg: &Config) {
+        match *self {
+            Upstream::Matrix { access_token: ref mut token, last_batch: _ } => {
+                if token.is_empty() {
+                    *token = matrix_org::connect(client, cfg).unwrap_or_default()
+                }
+            }
+        };
+    }
+
+    pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
+        match *self {
+            Upstream::Matrix { ref access_token, ref mut last_batch } => {
+                matrix_org::process_updates(client, access_token, last_batch)
+            }
+        }
+    }
+
+    pub fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let result = matrix_org::post_update(client, access_token, chat_id, update);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+
+    pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+                let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
+                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+
+    pub fn report_link_to_verify(&self, client: &Client, link: &UserInfo) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+                let message = format!("{}: You should prove it's you! Write '{}' without quotes in {}!", display_name, CHALLENGE, link.adapter.to_string());
+                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+
+    pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
+        match *self {
+            Upstream::Matrix { ref access_token, .. } => {
+                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+                let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
+                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
+                match result {
+                    Ok(event_id) => info!("Message posted with event id {}", event_id),
+                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
+                }
+            }
+        }
+    }
+}
+
 // Where do we retrieve updates from
-#[derive(Debug, PartialEq, Hash, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Adapter {
     #[cfg(feature = "linux-org-ru")]
     LinuxOrgRu,
@@ -99,35 +207,10 @@ impl Adapter {
     }
 }
 
-pub enum MarkdownType {
-    GitHub,
-    Matrix,
-    Telegram,
-}
-
-/// command syntax is:
-/// ```
-/// /link LinuxOrgRu username
-/// /unlink LinuxOrgRu username
-/// /unlinkall username
-/// ```
-#[derive(Debug)]
-pub enum UpstreamUpdate {
-    Link(UserInfo),
-    Unlink(UserInfo),
-    UnlinkAll {
-        /// From which upstream does this request come from
-        upstream_type: String,
-        /// Which user to process unlink for
-        user_name: String,
-    },
-}
-
 /// User info struct, which provides a link between Connector and Adapter
 /// UserInfo struct instances are meant to be alive almost the same amount of time
 /// the application is running.
-#[derive(Debug, Hash, Eq, Queryable, Insertable)]
-#[table_name = "user_info"]
+#[derive(Debug, Hash, Eq, Queryable)]
 pub struct UserInfo {
     /// internal id as saved in DB, mostly not used
     pub id: i32,
@@ -143,6 +226,19 @@ pub struct UserInfo {
     pub linked_user_id: String,
     /// Last time update was queried for this instance
     pub last_update: NaiveDateTime,
+    /// Verified link with account or not
+    pub verified: bool,
+}
+
+#[derive(Insertable)]
+#[table_name = "user_info"]
+pub struct NewUserInfo {
+    pub upstream_type: String,
+    pub chat_id: String,
+    pub user_id: String,
+    pub adapter: Adapter,
+    pub linked_user_id: String,
+    pub last_update: NaiveDateTime,
 }
 
 impl PartialEq for UserInfo {
@@ -153,76 +249,11 @@ impl PartialEq for UserInfo {
     }
 }
 
-
-/// Update description
-pub trait UpdateDesc {
-    fn as_string(&self) -> String;
-    fn as_markdown(&self, md_type: MarkdownType) -> String;
-    fn as_html(&self) -> String;
-    fn timestamp(&self) -> NaiveDateTime;
-}
-
-impl Upstream {
-    pub fn connect(&mut self, client: &Client, cfg: &Config) {
-        match *self {
-            Upstream::Matrix { access_token: ref mut token, last_batch: _ } => {
-                if token.is_empty() {
-                    *token = matrix_org::connect(client, cfg).unwrap_or_default()
-                }
-            }
-        };
-    }
-
-    pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
-        match *self {
-            Upstream::Matrix { ref access_token, ref mut last_batch } => {
-                matrix_org::process_updates(client, access_token, last_batch)
-            }
-        }
-    }
-
-    pub fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let result = matrix_org::post_update(client, access_token, chat_id, update);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
-        }
-    }
-
-    pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
-                let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
-                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
-        }
-    }
-
-    pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
-                let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
-                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
-        }
-    }
-}
-
 impl UserInfo {
+
+    /// Retrieve info from adapter and update self from that info
+    /// * Don't report initial data, report only updates after that
+    /// * If the message contains 'I love lor-bot!' then mark self as verified
     pub fn poll(&mut self, client: &Client) -> Vec<Box<UpdateDesc>> {
         let linked_user_name = self.linked_user_id.to_owned();
         let update_result = self.adapter.poll(client, vec![linked_user_name]);
@@ -239,6 +270,12 @@ impl UserInfo {
                 updates
             }
         };
+
+        // try to lookup proof message in adapter
+        if !self.verified {
+            self.verified = updates.iter().any(|u| u.as_string().contains(CHALLENGE));
+        }
+
         let current_latest_update = updates.iter().map(|u| u.timestamp()).max().unwrap();
         if self.last_update == current_latest_update {
             info!("No updates for {}...", self.linked_user_id);
@@ -259,6 +296,7 @@ impl UserInfo {
             updates.into_iter().filter(|u| u.timestamp() > self.last_update).collect();
         self.last_update = current_latest_update;
 
+        info!("Found {} updates for {}", new_updates.len(), self.linked_user_id);
         new_updates
     }
 }
@@ -274,8 +312,7 @@ mod tests {
 
     #[test]
     fn test_insert() {
-        let sample = UserInfo {
-            id: 0,
+        let sample = NewUserInfo {
             upstream_type: "Matrix".to_owned(),
             chat_id: "chat0".to_owned(),
             user_id: "user0".to_owned(),

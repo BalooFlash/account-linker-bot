@@ -122,6 +122,7 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
             adapter: adapter.unwrap(),
             linked_user_id: linked_user_id.to_owned(),
             last_update: NaiveDateTime::from_timestamp(0, 0),
+            verified: false
         })
     };
 

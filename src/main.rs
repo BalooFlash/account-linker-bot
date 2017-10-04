@@ -24,8 +24,8 @@ extern crate derive_error;
 extern crate crossbeam;
 extern crate chrono;
 extern crate uuid;
-#[macro_use]
-extern crate lazy_static;
+//#[macro_use]
+//extern crate lazy_static;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -41,8 +41,6 @@ use std::time::Duration;
 use std::path::Path;
 use std::fs::create_dir;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 pub mod database;
 mod entities;
@@ -51,8 +49,9 @@ mod modules;
 use entities::*;
 use entities::UpstreamUpdate::*;
 
+/*
 lazy_static! {
-    static ref CONN: Arc<Mutex<SqliteConnection>> = {
+    static ref DB_CONN: Arc<Mutex<SqliteConnection>> = {
         if !Path::new("data").exists() {
             debug!("Creating data dir for configs in cwd");
             create_dir("data").expect("Must be able to create data dir!");
@@ -61,6 +60,7 @@ lazy_static! {
         Arc::new(Mutex::new(conn))
     };
 }
+*/
 
 #[derive(new)]
 struct GlobalData {
@@ -92,8 +92,8 @@ fn main() {
     cfg.merge(File::with_name("conf/bot-config.yml")).expect("Must be able to parse config in conf/bot-config.yml");
 
     // retrieve list of bindings from database
-    let user_infos = vec![];
-
+    let user_infos: Vec<UserInfo> = user_info::table.load(&conn).unwrap();
+    info!("Updates: {:?}", user_infos);
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
     app_data.connects.insert("Matrix".to_owned(),
                              Upstream::Matrix {
@@ -121,15 +121,14 @@ fn start_event_loop(mut data: GlobalData) {
 
             for d in demands {
                 match d {
-                    Link(new_user_info) => {
-                        if data.requests.contains(&new_user_info) {
+                    Link(request) => {
+                        if data.requests.contains(&request) {
                             // this request was already present, report it
-                            upstream.report_duplicate_link(client, new_user_info);
+                            upstream.report_duplicate_link(client, request);
                             continue;
                         }
-                        diesel::insert(&new_user_info).into(user_info::table).execute(&data.conn).expect("Error saving new user info!");
-                        upstream.report_added_link(client, &new_user_info);
-                        data.requests.push(new_user_info);
+                        upstream.report_link_to_verify(client, &request);
+                        data.requests.push(request);
                     }
                     Unlink(user_info) => data.requests.retain(|i| i != &user_info),
                     UnlinkAll { user_name, upstream_type } => {
@@ -139,9 +138,35 @@ fn start_event_loop(mut data: GlobalData) {
             }
         }
 
-        for user_info in data.requests.iter_mut() {
+        for user_info in &mut data.requests {
+            let old_verified = user_info.verified;
             let upstream = data.connects.get(&user_info.upstream_type).expect("Must be known upstream type!");
             let updates = user_info.poll(&data.http_client);
+
+            if !user_info.verified {
+                // don't report data that wasn't previously verified
+                continue
+            }
+
+
+            if !old_verified {
+                // this user info just got itself verified, notify and insert to DB
+                upstream.report_added_link(client, user_info);
+
+                let new_row = NewUserInfo {
+                    upstream_type: user_info.upstream_type.to_owned(),
+                    chat_id: user_info.chat_id.to_owned(),
+                    user_id: user_info.user_id.to_owned(),
+                    adapter: user_info.adapter,
+                    linked_user_id: user_info.linked_user_id.to_owned(),
+                    last_update: user_info.last_update
+                };
+
+                diesel::insert(&new_row)
+                    .into(user_info::table)
+                    .execute(&data.conn).expect("Error saving new user info!");
+            }
+
             for update in updates {
                 upstream.push_update(client, &user_info.chat_id, update);
             }
