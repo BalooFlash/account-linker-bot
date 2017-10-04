@@ -114,9 +114,11 @@ fn start_event_loop(mut data: GlobalData) {
                         }
                         upstream.report_added_link(client, &new_user_info);
                         data.requests.push(new_user_info);
-                    },
+                    }
                     Unlink(user_info) => data.requests.retain(|i| i != &user_info),
-                    UnlinkAll { user_name, upstream_type } => data.requests.retain(|i| i.user_id == user_name && i.upstream_type == upstream_type),
+                    UnlinkAll { user_name, upstream_type } => {
+                        data.requests.retain(|i| i.user_id == user_name && i.upstream_type == upstream_type)
+                    }
                 }
             }
         }

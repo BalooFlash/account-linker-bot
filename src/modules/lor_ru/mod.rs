@@ -103,9 +103,9 @@ pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComm
         comments.push(LorComment {
             common: UserComment {
                 user_name: author_name,
-                post_title,
+                post_title: post_title,
                 comment_date: comment_date.naive_utc(),
-                comment_text,
+                comment_text: comment_text,
             },
             post_link: LOR_URL.to_owned() + post_link,
             author_link: LOR_URL.to_owned() + author_link,

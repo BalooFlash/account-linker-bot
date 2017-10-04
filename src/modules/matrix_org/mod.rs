@@ -203,8 +203,6 @@ pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &Stri
 #[cfg(test)]
 mod tests {
     use serde_json;
-
-    use std::path::Path;
     use std::fs::File;
     use std::io::Read;
 

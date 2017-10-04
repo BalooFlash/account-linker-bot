@@ -18,13 +18,11 @@ pub struct UserComment {
 
 impl UpdateDesc for UserComment {
     fn as_string(&self) -> String {
-        format!(
-            "{}: {} added comment to post {}:\n\t'{}'",
-            self.comment_date,
-            self.post_title,
-            self.user_name,
-            self.comment_text
-        )
+        format!("{}: {} added comment to post {}:\n\t'{}'",
+                self.comment_date,
+                self.post_title,
+                self.user_name,
+                self.comment_text)
     }
 
     fn as_markdown(&self, _: MarkdownType) -> String {

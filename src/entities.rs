@@ -1,13 +1,18 @@
 use std::error::Error;
 use std::result;
+use std::str;
 use std::str::FromStr;
 
 use chrono::prelude::*;
 use reqwest::Client;
 use config::Config;
 
-use diesel::Expression;
+use diesel::expression::AsExpression;
+use diesel::expression::helper_types::AsExprOf;
+use diesel::sqlite::Sqlite;
 use diesel::types::Text;
+use diesel::row::Row;
+use diesel::types::FromSqlRow;
 use database::schema::user_info;
 
 use modules::*;
@@ -45,7 +50,6 @@ pub enum Adapter {
 }
 
 impl FromStr for Adapter {
-
     type Err = CoreError;
 
     fn from_str(s: &str) -> Result<Self> {
@@ -57,7 +61,6 @@ impl FromStr for Adapter {
 }
 
 impl ToString for Adapter {
-
     fn to_string(&self) -> String {
         match *self {
             Adapter::LinuxOrgRu => "LinuxOrgRu".to_owned(),
@@ -65,9 +68,21 @@ impl ToString for Adapter {
     }
 }
 
-impl Expression for Adapter {
-    type SqlType = Text;
+impl<'a> AsExpression<Text> for &'a Adapter {
+    type Expression = AsExprOf<String, Text>;
+    fn as_expression(self) -> Self::Expression {
+        <String as AsExpression<Text>>::as_expression(self.to_string())
+    }
 }
+
+impl FromSqlRow<Text, Sqlite> for Adapter {
+    fn build_from_row<R: Row<Sqlite>>(row: &mut R) -> result::Result<Self, Box<Error + Send + Sync>> {
+        let raw = <String as FromSqlRow<Text, Sqlite>>::build_from_row(row)?;
+        let adapter: Result<Adapter> = str::parse(&raw);
+        adapter.or_else(|e| Err(e.description().into()))
+    }
+}
+
 
 impl Adapter {
     pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>> {
@@ -133,9 +148,8 @@ pub struct UserInfo {
 impl PartialEq for UserInfo {
     /// We don't compare internal ids
     fn eq(&self, rhs: &UserInfo) -> bool {
-        self.chat_id == rhs.chat_id && self.user_id == rhs.user_id &&
-        self.linked_user_id == rhs.linked_user_id && self.upstream_type == rhs.upstream_type &&
-        self.adapter == rhs.adapter
+        self.chat_id == rhs.chat_id && self.user_id == rhs.user_id && self.linked_user_id == rhs.linked_user_id &&
+        self.upstream_type == rhs.upstream_type && self.adapter == rhs.adapter
     }
 }
 
@@ -197,9 +211,7 @@ impl Upstream {
     pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
-                let message = format!("{}: Link to {} created!",
-                                      link.user_id,
-                                      link.linked_user_id);
+                let message = format!("{}: Link to {} created!", link.user_id, link.linked_user_id);
                 let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
                 match result {
                     Ok(event_id) => info!("Message posted with event id {}", event_id),
@@ -273,8 +285,9 @@ mod tests {
         };
         let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
 
-        diesel::insert(&sample).into(user_info::table)
-            .execute(conn)
+        diesel::insert(&sample)
+            .into(user_info::table)
+            .execute(&conn)
             .expect("Error saving new post");
 
     }
