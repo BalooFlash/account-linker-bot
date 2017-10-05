@@ -104,6 +104,16 @@ fn main() {
     start_event_loop(app_data);
 }
 
+/// Main bot event loop.
+///
+/// Reads and processes data from upstreams using credentials in config. Users in upstreams
+/// can create links to themselves in downstreams and verify them by posting verification messages
+/// that bot requests.
+///
+/// Polls data from downstreams that users verified. If any updates found, report them
+/// to the corresponding upstream.
+///
+/// Keep CPU overhead low so it can be run on RPi or ARM VPS.
 fn start_event_loop(mut data: GlobalData) {
     let client = &data.http_client;
     loop {
@@ -119,6 +129,7 @@ fn start_event_loop(mut data: GlobalData) {
                 Ok(demands) => demands,
             };
 
+            // We got commands from upstream, process them
             for d in demands {
                 match d {
                     Link(request) => {
@@ -138,13 +149,14 @@ fn start_event_loop(mut data: GlobalData) {
             }
         }
 
+        // process any updates from downstream adapters, lookup verify messages
         for user_info in &mut data.requests {
             let old_verified = user_info.verified;
             let upstream = data.connects.get(&user_info.upstream_type).expect("Must be known upstream type!");
             let updates = user_info.poll(&data.http_client);
 
             if !user_info.verified {
-                // don't report data that wasn't previously verified
+                // don't report data for user that wasn't previously verified
                 continue
             }
 
@@ -153,6 +165,7 @@ fn start_event_loop(mut data: GlobalData) {
                 // this user info just got itself verified, notify and insert to DB
                 upstream.report_added_link(client, user_info);
 
+                // screw you, Diesel
                 let new_row = NewUserInfo {
                     upstream_type: user_info.upstream_type.to_owned(),
                     chat_id: user_info.chat_id.to_owned(),
@@ -167,9 +180,12 @@ fn start_event_loop(mut data: GlobalData) {
                     .execute(&data.conn).expect("Error saving new user info!");
             }
 
+            // Push an update message to upstream for each new data found in adapter
             for update in updates {
                 upstream.push_update(client, &user_info.chat_id, update);
             }
+
+            // TODO: persist last_update to db!
         }
 
         debug!("Done polling, sleeping...");

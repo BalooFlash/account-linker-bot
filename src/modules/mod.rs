@@ -9,6 +9,8 @@ pub mod lor_ru;
 
 pub mod matrix_org;
 
+/// Simplest generic user comment structure that may be convenient
+/// for dumb downstream adapters
 pub struct UserComment {
     user_name: String,
     post_title: String,

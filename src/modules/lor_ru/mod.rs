@@ -1,5 +1,4 @@
 use std::vec::Vec;
-use std::io::Read;
 
 use reqwest::Client;
 use select::document::Document;
@@ -12,12 +11,15 @@ use entities::*;
 
 const LOR_URL: &'static str = "https://www.linux.org.ru/";
 
+/// Lor comment struct definition
+/// TODO: Basically speaking we can track both comments and posts distinctly
 pub struct LorComment {
     common: UserComment,
     post_link: String,
     author_link: String,
 }
 
+/// How to represent it in different upstreams
 impl UpdateDesc for LorComment {
     fn as_string(&self) -> String {
         self.common.as_string()
@@ -53,13 +55,14 @@ impl UpdateDesc for LorComment {
     }
 }
 
+/// Retrieve data for requested user from his profile page
+/// This doesn't show posts or comments made in secret boards but that'd defeat the purpose of
+/// having such bot anyway
 pub fn get_user_posts(user_name: &String, client: &Client) -> Result<Vec<LorComment>> {
     let url = LOR_URL.to_string() + "search.jsp?range=COMMENTS&sort=DATE&user=" + &user_name;
-    let mut body = String::new();
-    let mut response = client.get(&url)?.send()?;
-    response.read_to_string(&mut body)?;
+    let response = client.get(&url)?.send()?;
 
-    let doc = Document::from(body.as_str());
+    let doc = Document::from_read(response).unwrap();
     let mut comments: Vec<LorComment> = vec![];
     for node in doc.find(Name("article").and(Class("msg"))) {
         // extract post data

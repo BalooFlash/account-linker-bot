@@ -30,6 +30,7 @@ macro_rules! publicize {
 
 publicize! {
 
+/// Login structure, used in `entities::Upstream::connect()`
 #[derive(Serialize, Deserialize)]
 struct Login {
     #[serde(rename = "type")]
@@ -38,6 +39,7 @@ struct Login {
     password: String,
 }
 
+/// Login answer structure describing user and containing `access_token` that we're so in need of
 #[derive(Serialize, Deserialize)]
 struct LoginAnswer {
     access_token: String,
@@ -46,6 +48,7 @@ struct LoginAnswer {
     device_id: String,
 }
 
+/// Answer to /sync call. Pretty big structure, to be honest
 #[derive(Serialize, Deserialize)]
 struct SyncAnswer {
     rooms: RoomUpdates,

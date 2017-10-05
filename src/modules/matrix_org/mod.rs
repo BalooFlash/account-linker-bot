@@ -35,6 +35,9 @@ pub fn connect(client: &Client, conf: &Config) -> Result<String> {
     Ok(response_body.access_token)
 }
 
+/// Get all updates since last batch from Matrix servers. This requires auth.
+///
+/// - Also join any room if invited
 pub fn process_updates(client: &Client, token: &String, last_batch: &mut String) -> Result<Vec<UpstreamUpdate>> {
     // sync is the main routine in matrix.org lifecycle
     let sync_url = MATRIX_API_ENDPOINT.to_owned() + "/sync";
@@ -68,7 +71,9 @@ pub fn process_updates(client: &Client, token: &String, last_batch: &mut String)
     Ok(Vec::default())
 }
 
-/// Retrieves and parses commands from room updates
+/// Retrieves and parses commands from room updates.
+///
+/// Skips any updates that are not `m.message` type.
 fn capture_commands(all_rooms: HashMap<String, RoomJoinState>) -> Result<Vec<UpstreamUpdate>> {
     let mut all_updates: Vec<UpstreamUpdate> = vec![];
     for room_events in all_rooms {
@@ -103,6 +108,7 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
         return None;
     }
 
+    // helper lambda to build UserInfo from event + command
     let info_from_event = |event: Event, args: &Vec<&str>| {
         if args.len() < 2 {
             return None;
@@ -140,6 +146,10 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
     }
 }
 
+/// Posts update as formatted `m.notice` text message. This requires auth.
+///
+/// This uses undocumented `org.matrix.custom.html` format,
+/// so is subject to change in future once markdown/other formatting solution is in place.
 pub fn post_update(client: &Client, access_token: &String, chat_id: &str, update: Box<UpdateDesc>) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
@@ -163,8 +173,8 @@ pub fn post_update(client: &Client, access_token: &String, chat_id: &str, update
     Ok(event_id)
 }
 
-/// Get user display name given we know their user name slug
-/// Auth not required.
+/// Get user display name given we know their user name slug.
+/// Auth is not required for this.
 pub fn get_display_name(client: &Client, user_name: &str) -> Result<String> {
     let get_url = MATRIX_API_ENDPOINT.to_owned() + "/profile/" + user_name + "/displayname";
 
@@ -179,6 +189,7 @@ pub fn get_display_name(client: &Client, user_name: &str) -> Result<String> {
     Ok(display_name)
 }
 
+/// Posts a plain `m.notice` message with requested text. Requires auth.
 pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &String, message: String) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
@@ -199,20 +210,4 @@ pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &Stri
     let event_id = response_body.remove("event_id")
         .expect("Answer must contain event id in case of success");
     Ok(event_id)
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json;
-    use std::fs::File;
-    use std::io::Read;
-
-    use modules::matrix_org::SyncAnswer;
-
-    #[test]
-    fn test_deserialize() {
-        let mut file = File::open("tests/bot-response.json").expect("File must be present!");
-        let response_body: SyncAnswer = serde_json::from_reader(file).expect("File must be deserializable!");
-    }
-
 }

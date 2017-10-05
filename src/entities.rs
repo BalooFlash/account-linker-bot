@@ -21,6 +21,7 @@ pub type Result<T> = result::Result<T, CoreError>;
 
 const CHALLENGE: &'static str = "I love lor-bot!";
 
+/// Common errors for application
 #[derive(Debug, Error)]
 pub enum CoreError {
     /// Error retrieving LOR HTML page
@@ -34,13 +35,14 @@ pub enum CoreError {
     CustomError(String),
 }
 
+/// Different markdown types for different upstreams
 pub enum MarkdownType {
     GitHub,
     Matrix,
     Telegram,
 }
 
-/// command syntax is:
+/// command syntax is e.g.:
 /// ```
 /// /link LinuxOrgRu username
 /// /unlink LinuxOrgRu username
@@ -58,7 +60,8 @@ pub enum UpstreamUpdate {
     },
 }
 
-/// Update description
+/// Update description, provides timestamp when update happened and various ways to
+/// represent it in upstreams.
 pub trait UpdateDesc {
     fn as_string(&self) -> String;
     fn as_markdown(&self, md_type: MarkdownType) -> String;
@@ -77,6 +80,8 @@ pub enum Upstream {
 }
 
 impl Upstream {
+
+    /// Connect using credentials provided in config
     pub fn connect(&mut self, client: &Client, cfg: &Config) {
         match *self {
             Upstream::Matrix { access_token: ref mut token, last_batch: _ } => {
@@ -87,6 +92,7 @@ impl Upstream {
         };
     }
 
+    /// Check updates that this upstream may have and return them
     pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
         match *self {
             Upstream::Matrix { ref access_token, ref mut last_batch } => {
@@ -95,6 +101,7 @@ impl Upstream {
         }
     }
 
+    /// Push formatted update from downstream adapter to this upstream
     pub fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
@@ -107,6 +114,7 @@ impl Upstream {
         }
     }
 
+    /// User already requested this link or it already verified, report it
     pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
@@ -121,6 +129,7 @@ impl Upstream {
         }
     }
 
+    /// User requested this link, we should verify it in respective downstream, say that to user
     pub fn report_link_to_verify(&self, client: &Client, link: &UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
@@ -135,6 +144,7 @@ impl Upstream {
         }
     }
 
+    /// User successfully verified this link, say that
     pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
         match *self {
             Upstream::Matrix { ref access_token, .. } => {
@@ -150,7 +160,7 @@ impl Upstream {
     }
 }
 
-// Where do we retrieve updates from
+/// Downstream where we retrieve updates from
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Adapter {
     #[cfg(feature = "linux-org-ru")]
@@ -176,6 +186,7 @@ impl ToString for Adapter {
     }
 }
 
+/// Diesel-related
 impl<'a> AsExpression<Text> for &'a Adapter {
     type Expression = AsExprOf<String, Text>;
     fn as_expression(self) -> Self::Expression {
@@ -183,6 +194,7 @@ impl<'a> AsExpression<Text> for &'a Adapter {
     }
 }
 
+/// Diesel-related
 impl FromSqlRow<Text, Sqlite> for Adapter {
     fn build_from_row<R: Row<Sqlite>>(row: &mut R) -> result::Result<Self, Box<Error + Send + Sync>> {
         let raw = <String as FromSqlRow<Text, Sqlite>>::build_from_row(row)?;
@@ -193,6 +205,9 @@ impl FromSqlRow<Text, Sqlite> for Adapter {
 
 
 impl Adapter {
+
+    /// Poll data from this downstream adapter. This doesn't usually require any auth
+    /// as you don't want to report your non-public posts to chats in upstreams
     pub fn poll(&self, client: &Client, specifiers: Vec<String>) -> Result<Vec<Box<UpdateDesc>>> {
         match *self {
             Adapter::LinuxOrgRu => {
@@ -230,6 +245,7 @@ pub struct UserInfo {
     pub verified: bool,
 }
 
+/// Diesel-requred insert helper
 #[derive(Insertable)]
 #[table_name = "user_info"]
 pub struct NewUserInfo {
@@ -242,7 +258,7 @@ pub struct NewUserInfo {
 }
 
 impl PartialEq for UserInfo {
-    /// We don't compare internal ids
+    /// We don't compare internal ids and last_update times
     fn eq(&self, rhs: &UserInfo) -> bool {
         self.chat_id == rhs.chat_id && self.user_id == rhs.user_id && self.linked_user_id == rhs.linked_user_id &&
         self.upstream_type == rhs.upstream_type && self.adapter == rhs.adapter
@@ -292,6 +308,7 @@ impl UserInfo {
             return Vec::default();
         }
 
+        // we got updates since last times, return them and update our last known timestamp
         let new_updates: Vec<Box<UpdateDesc>> =
             updates.into_iter().filter(|u| u.timestamp() > self.last_update).collect();
         self.last_update = current_latest_update;
@@ -299,34 +316,4 @@ impl UserInfo {
         info!("Found {} updates for {}", new_updates.len(), self.linked_user_id);
         new_updates
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use diesel::sqlite::*;
-    use diesel::prelude::*;
-    use diesel;
-    use entities::*;
-    use chrono::prelude::*;
-    use database::schema::user_info;
-
-    #[test]
-    fn test_insert() {
-        let sample = NewUserInfo {
-            upstream_type: "Matrix".to_owned(),
-            chat_id: "chat0".to_owned(),
-            user_id: "user0".to_owned(),
-            adapter: Adapter::LinuxOrgRu,
-            linked_user_id: "user1".to_owned(),
-            last_update: NaiveDateTime::from_timestamp(0, 0),
-        };
-        let conn = SqliteConnection::establish("data/acc-linker-bot.db").expect("Error connecting to sqlite3 db!");
-
-        diesel::insert(&sample)
-            .into(user_info::table)
-            .execute(&conn)
-            .expect("Error saving new post");
-
-    }
-
 }
