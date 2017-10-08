@@ -19,7 +19,7 @@ use modules::*;
 
 pub type Result<T> = result::Result<T, CoreError>;
 
-const CHALLENGE: &'static str = "I love lor-bot!";
+const CHALLENGE: &str = "I love lor-bot!";
 
 /// Common errors for application
 #[derive(Debug, Error)]
@@ -72,90 +72,79 @@ pub trait UpdateDesc {
 
 /// Where do we request updates to be sent to
 /// and from where do we connect to link accounts
-pub enum Upstream {
-    Matrix {
-        access_token: String,
-        last_batch: String,
-    },
-}
-
-impl Upstream {
-
+pub trait Upstream {
     /// Connect using credentials provided in config
-    pub fn connect(&mut self, client: &Client, cfg: &Config) {
-        match *self {
-            Upstream::Matrix { access_token: ref mut token, last_batch: _ } => {
-                if token.is_empty() {
-                    *token = matrix_org::connect(client, cfg).unwrap_or_default()
-                }
-            }
-        };
-    }
+    fn connect(&mut self, client: &Client, cfg: &Config);
 
     /// Check updates that this upstream may have and return them
-    pub fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
-        match *self {
-            Upstream::Matrix { ref access_token, ref mut last_batch } => {
-                matrix_org::process_updates(client, access_token, last_batch)
-            }
-        }
-    }
+    fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>>;
 
     /// Push formatted update from downstream adapter to this upstream
-    pub fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let result = matrix_org::post_update(client, access_token, chat_id, update);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
-        }
-    }
+    fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>);
 
     /// User already requested this link or it already verified, report it
-    pub fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
-                let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
-                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
-        }
-    }
+    fn report_duplicate_link(&self, client: &Client, link: UserInfo);
 
     /// User requested this link, we should verify it in respective downstream, say that to user
-    pub fn report_link_to_verify(&self, client: &Client, link: &UserInfo) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
-                let message = format!("{}: You should prove it's you! Write '{}' without quotes in {}!", display_name, CHALLENGE, link.adapter.to_string());
-                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
+    fn report_link_to_verify(&self, client: &Client, link: &UserInfo);
+
+    /// User successfully verified this link, say that
+    fn report_added_link(&self, client: &Client, link: &UserInfo);
+}
+
+#[derive(Default)]
+pub struct Matrix {
+    access_token: String,
+    last_batch: String,
+}
+
+impl Upstream for Matrix {
+
+    fn connect(&mut self, client: &Client, cfg: &Config) {
+        if self.access_token.is_empty() {
+            self.access_token = matrix_org::connect(client, cfg).unwrap_or_default()
         }
     }
 
-    /// User successfully verified this link, say that
-    pub fn report_added_link(&self, client: &Client, link: &UserInfo) {
-        match *self {
-            Upstream::Matrix { ref access_token, .. } => {
-                let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
-                let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
-                let result = matrix_org::post_plain_message(client, access_token, &link.chat_id, message);
-                match result {
-                    Ok(event_id) => info!("Message posted with event id {}", event_id),
-                    Err(error) => error!("Error while sending Matrix message: {:?}", error),
-                }
-            }
+    fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
+        matrix_org::process_updates(client, &self.access_token, &mut self.last_batch)
+    }
+
+    fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
+        let result = matrix_org::post_update(client, &self.access_token, chat_id, update);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
+        let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
+        let result = matrix_org::post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_link_to_verify(&self, client: &Client, link: &UserInfo) {
+        let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: You should prove it's you! Write '{}' without quotes in {}!", display_name, CHALLENGE, link.adapter.to_string());
+        let result = matrix_org::post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_added_link(&self, client: &Client, link: &UserInfo) {
+        let display_name = matrix_org::get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
+        let result = matrix_org::post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
         }
     }
 }

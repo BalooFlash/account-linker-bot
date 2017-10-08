@@ -67,7 +67,7 @@ struct GlobalData {
     conn: SqliteConnection,
     config: Config,
     http_client: Client,
-    connects: HashMap<String, Upstream>,
+    connects: HashMap<String, Box<Upstream>>,
     requests: Vec<UserInfo>,
 }
 
@@ -95,11 +95,7 @@ fn main() {
     let user_infos: Vec<UserInfo> = user_info::table.load(&conn).unwrap();
     info!("Updates: {:?}", user_infos);
     let mut app_data = GlobalData::new(conn, cfg, client, HashMap::new(), user_infos);
-    app_data.connects.insert("Matrix".to_owned(),
-                             Upstream::Matrix {
-                                 access_token: String::default(),
-                                 last_batch: String::default(),
-                             });
+    app_data.connects.insert("Matrix".to_owned(), Box::new(Matrix::default()));
 
     start_event_loop(app_data);
 }

@@ -13,15 +13,15 @@ mod matrix_api;
 use entities::*;
 use self::matrix_api::*;
 
-const MATRIX_API_ENDPOINT: &'static str = "https://matrix.org/_matrix/client/r0";
+const MATRIX_API_ENDPOINT: &str = "https://matrix.org/_matrix/client/r0";
 
 pub fn connect(client: &Client, conf: &Config) -> Result<String> {
-    let login = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
+    let user = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
     let password = conf.get_str("matrix.password").expect("matrix.password property must be supplied in config");
     let post_body = Login {
         login_type: "m.login.password".to_owned(),
-        user: login,
-        password: password,
+        user,
+        password,
     };
 
     let login_url = MATRIX_API_ENDPOINT.to_owned() + "/login";
@@ -58,7 +58,7 @@ pub fn process_updates(client: &Client, token: &String, last_batch: &mut String)
     // process invites
     if !response_body.rooms.invite.is_empty() {
         for room_id in response_body.rooms.invite.keys() {
-            let join_url = MATRIX_API_ENDPOINT.to_owned() + "/join/" + room_id + "?access_token=" + token;
+            let join_url = format!("{base}/join/{room_id}?access_token={token}", base = MATRIX_API_ENDPOINT, room_id = room_id,token = token);
             client.post(&join_url)?.send()?;
         }
     }
@@ -150,7 +150,7 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
 ///
 /// This uses undocumented `org.matrix.custom.html` format,
 /// so is subject to change in future once markdown/other formatting solution is in place.
-pub fn post_update(client: &Client, access_token: &String, chat_id: &str, update: Box<UpdateDesc>) -> Result<String> {
+pub fn post_update(client: &Client, access_token: &str, chat_id: &str, update: Box<UpdateDesc>) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
                        "?access_token=" + access_token;
@@ -190,7 +190,7 @@ pub fn get_display_name(client: &Client, user_name: &str) -> Result<String> {
 }
 
 /// Posts a plain `m.notice` message with requested text. Requires auth.
-pub fn post_plain_message(client: &Client, access_token: &String, chat_id: &String, message: String) -> Result<String> {
+pub fn post_plain_message(client: &Client, access_token: &str, chat_id: &String, message: String) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
                        "?access_token=" + access_token;
