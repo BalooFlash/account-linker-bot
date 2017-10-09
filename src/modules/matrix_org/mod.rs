@@ -11,9 +11,79 @@ use std::collections::HashMap;
 mod matrix_api;
 
 use entities::*;
+use modules::mankier;
 use self::matrix_api::*;
 
 const MATRIX_API_ENDPOINT: &str = "https://matrix.org/_matrix/client/r0";
+
+#[derive(Default)]
+pub struct Matrix {
+    access_token: String,
+    last_batch: String,
+}
+
+impl Upstream for Matrix {
+
+    fn connect(&mut self, client: &Client, cfg: &Config) {
+        if self.access_token.is_empty() {
+            self.access_token = connect(client, cfg).unwrap_or_default()
+        }
+    }
+
+    fn check_updates(&mut self, client: &Client) -> Result<Vec<UpstreamUpdate>> {
+        process_updates(client, &self.access_token, &mut self.last_batch)
+    }
+
+    fn push_update(&self, client: &Client, chat_id: &str, update: Box<UpdateDesc>) {
+        let result = post_update(client, &self.access_token, chat_id, update);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_duplicate_link(&self, client: &Client, link: UserInfo) {
+        let display_name = get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: Link to {} is already present!", display_name, link.linked_user_id);
+        let result = post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_link_to_verify(&self, client: &Client, link: &UserInfo) {
+        let display_name = get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: You should prove it's you! Write '{}' without quotes in {}!", display_name, CHALLENGE, link.adapter.to_string());
+        let result = post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn report_added_link(&self, client: &Client, link: &UserInfo) {
+        let display_name = get_display_name(client, &link.user_id).unwrap_or(link.user_id.to_owned());
+        let message = format!("{}: Link to {} created!", display_name, link.linked_user_id);
+        let result = post_plain_message(client, &self.access_token, &link.chat_id, message);
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
+    }
+
+    fn explain_command(&self, client: &Client, chat_id: &str, command: &str) {
+        let explanation = mankier::explain_command(client, command);
+        match explanation {
+            Err(error) => {
+                error!("Error while trying to explain shell command: {:?}", error);
+                let message = format!("Couldn't explain command: {}", error);
+                post_plain_message(client, &self.access_token, chat_id, message)
+            }
+            Ok(explanation) => post_plain_message(client, &self.access_token, chat_id, explanation)
+        };
+    }
+}
 
 pub fn connect(client: &Client, conf: &Config) -> Result<String> {
     let user = conf.get_str("matrix.login").expect("matrix.login property must be supplied in config");
@@ -190,7 +260,7 @@ pub fn get_display_name(client: &Client, user_name: &str) -> Result<String> {
 }
 
 /// Posts a plain `m.notice` message with requested text. Requires auth.
-pub fn post_plain_message(client: &Client, access_token: &str, chat_id: &String, message: String) -> Result<String> {
+pub fn post_plain_message(client: &Client, access_token: &str, chat_id: &str, message: String) -> Result<String> {
     let uuid = Uuid::new_v4().hyphenated().to_string();
     let post_msg_url = MATRIX_API_ENDPOINT.to_owned() + "/rooms/" + chat_id + "/send/m.room.message/" + &uuid +
                        "?access_token=" + access_token;

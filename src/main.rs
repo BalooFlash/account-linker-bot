@@ -48,6 +48,7 @@ mod modules;
 
 use entities::*;
 use entities::UpstreamUpdate::*;
+use modules::matrix_org::Matrix;
 
 /*
 lazy_static! {
@@ -141,6 +142,7 @@ fn start_event_loop(mut data: GlobalData) {
                     UnlinkAll { user_name, upstream_type } => {
                         data.requests.retain(|i| i.user_id == user_name && i.upstream_type == upstream_type)
                     }
+                    Explain { chat_id, command } => upstream.explain_command(client, &chat_id, &command)
                 }
             }
         }

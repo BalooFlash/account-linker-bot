@@ -1,13 +1,11 @@
-extern crate chrono;
-
 use chrono::prelude::*;
 use entities::UpdateDesc;
 use entities::MarkdownType;
 
 #[cfg(feature = "linux-org-ru")]
 pub mod lor_ru;
-
 pub mod matrix_org;
+pub mod mankier;
 
 /// Simplest generic user comment structure that may be convenient
 /// for dumb downstream adapters
