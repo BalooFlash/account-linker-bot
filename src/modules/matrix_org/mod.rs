@@ -74,7 +74,7 @@ impl Upstream for Matrix {
 
     fn explain_command(&self, client: &Client, chat_id: &str, command: &str) {
         let explanation = mankier::explain_command(client, command);
-        match explanation {
+        let result = match explanation {
             Err(error) => {
                 error!("Error while trying to explain shell command: {:?}", error);
                 let message = format!("Couldn't explain command: {}", error);
@@ -82,6 +82,10 @@ impl Upstream for Matrix {
             }
             Ok(explanation) => post_plain_message(client, &self.access_token, chat_id, explanation)
         };
+        match result {
+            Ok(event_id) => info!("Message posted with event id {}", event_id),
+            Err(error) => error!("Error while sending Matrix message: {:?}", error),
+        }
     }
 }
 
@@ -205,13 +209,16 @@ fn parse_command(room_id: &str, event: Event, mut arguments: Vec<&str>) -> Optio
     match arguments.remove(0) {
         "link" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Link(info)),
         "unlink" => info_from_event(event, &arguments).map(|info| UpstreamUpdate::Unlink(info)),
-        "unlinkall" => {
-            Some(UpstreamUpdate::UnlinkAll {
+        "unlinkall" => Some(
+            UpstreamUpdate::UnlinkAll {
                 upstream_type: "Matrix".to_owned(),
                 user_name: event.sender,
-            })
-        }
-
+        }),
+        "explain" => Some(
+            UpstreamUpdate::Explain {
+                chat_id: room_id.to_owned(),
+                command: arguments.join(" ")
+        }),
         _ => None,
     }
 }
