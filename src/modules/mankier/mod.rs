@@ -5,7 +5,7 @@ use reqwest::Client;
 use entities::Result;
 use entities::CoreError;
 
-const MANKIER_ENDPOINT: &str = "https://www.mankier.com/api/v2/explain/?cols=30&q=";
+const MANKIER_ENDPOINT: &str = "https://www.mankier.com/api/v2/explain/?q=";
 
 pub fn explain_command(client: &Client, command: &str) -> Result<String> {
     let req_url = MANKIER_ENDPOINT.to_owned() + command;
